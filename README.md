@@ -41,7 +41,7 @@ and they do not improve a next-game usage model. Both results are in
 [`docs/role_clustering_report.html`](docs/role_clustering_report.html).
 
 - Against `statyx.play_types` — data the clustering never saw — the roles reach
-  mean cross-validated R² 0.178 versus 0.059 for listed position (3.0×). The
+  mean cross-validated R² 0.174 versus 0.047 for listed position (3.7×). The
   early-season variant, which removes most same-season overlap, still gets
   0.130 versus 0.058 (2.2×).
 - Adding role features to a usage model moves MAE from 0.05016 to 0.05004, a
@@ -117,7 +117,7 @@ uv run python -m scripts.audit               # data defects
 ```
 
 `scripts/report.py` writes `docs/role_clustering_report.html`. The committed
-report is a snapshot produced from the original artifacts.
+report is the output of the commands above against the source snapshot.
 
 ## Layout
 
