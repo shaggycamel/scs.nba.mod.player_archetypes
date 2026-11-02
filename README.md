@@ -8,7 +8,8 @@ trailing, per-minute rate stats, then scores each player-game with a vector of
 role responsibilities.
 
 Extracted from the `nba_adhoc` role-clustering branch at commit
-`2d93ab24755bc50a728494916f90d1ef91000e75` (`cluster-mod`).
+`2d93ab24755bc50a728494916f90d1ef91000e75` (`cluster-mod`). The source branch
+is archived in that repository as tag `archive/cluster-mod-2026-11-02`.
 
 ## What it produces
 
