@@ -20,6 +20,12 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.12",
 ]
+data = [
+    "scs-hub",
+]
+
+[tool.uv.sources]
+scs-hub = { git = "https://github.com/shaggycamel/scs.scs_hub.git" }
 
 [build-system]
 requires = ["hatchling"]
@@ -31,6 +37,7 @@ packages = ["src/player_archetypes"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100

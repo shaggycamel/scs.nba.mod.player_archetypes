@@ -86,6 +86,22 @@ statyx/schedule.parquet
 util/player_id_map_vw.parquet
 ```
 
+### Refresh from the live database
+
+The scheduled data stage uses `scs-hub` and its read-only `cockroach-read`
+connection:
+
+```bash
+uv sync --group data
+uv run python -m scripts.refresh_data
+```
+
+It pulls only the seven objects above and writes `_snapshot.json` alongside
+them. Credentials come from `SCS_HUB_CREDENTIALS` or
+`~/.config/scs_hub_credentials.ini`. The host needs `libpq` to build
+`psycopg2` and a headless JRE (`openjdk-17-jre-headless`) because `scs-hub`
+imports `nbainjuries` at load time.
+
 ## Use
 
 ```python
@@ -105,6 +121,24 @@ assigned = model.assign(design)
 
 `fit` returns a `RoleModel` carrying the scaler, optional PCA and mixture, so
 `assign` can be applied to future rows without refitting.
+
+## Scheduled pipeline
+
+The full job is refresh, then assign:
+
+```bash
+uv sync --group data
+uv run python -m scripts.refresh_data
+uv run python -m scripts.pipeline --require-snapshot --max-snapshot-age-days 7
+```
+
+`scripts/pipeline.py` loads the saved model or fits one if none exists, assigns
+roles, and writes `assignments.parquet`, `role_profiles.parquet` and
+`run.json` under `artifacts/pipeline/`. Add `--refit` on the weekly run to fit
+a new mixture before assigning.
+
+It exits non-zero on failure, so it can be called directly from cron or a
+systemd timer.
 
 ## Reproduce
 
