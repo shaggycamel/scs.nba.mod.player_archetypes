@@ -18,22 +18,30 @@ from pathlib import Path
 
 import polars as pl
 
-from player_archetypes.data.ids import DATA, game_map, nba_schedule, player_map
+from player_archetypes.data.ids import (
+    DATA,
+    game_map,
+    nba_schedule_from_frame,
+    player_map,
+)
 
 # usg_pct / e_usg_pct are the modelling target; poss and pace are team-level
 # tempo, not individual role. None of these may enter the clustering inputs.
 TARGET_COLS = ("usg_pct", "e_usg_pct")
 
 
-def box_scores(data: Path = DATA, played_only: bool = True) -> pl.DataFrame:
-    """Player-game box scores with season, date and DNP handling.
+def box_scores_from_frames(
+    box: pl.DataFrame,
+    schedule: pl.DataFrame,
+    played_only: bool = True,
+) -> pl.DataFrame:
+    """Player-game box scores joined to schedule metadata and DNP handling.
 
     `played` is False where the player was on the roster but did not play. Those
     rows carry a real `comment` (the DNP reason) and a fabricated `usg_pct` of
     0.0, so they are dropped by default.
     """
-    box = pl.read_parquet(data / "nba" / "player_box_score.parquet")
-    sched = nba_schedule(data).select(
+    sched = nba_schedule_from_frame(schedule).select(
         pl.col("nba_game_id").alias("game_id"), "game_date", "season", "season_type"
     )
     out = (
@@ -53,6 +61,15 @@ def box_scores(data: Path = DATA, played_only: bool = True) -> pl.DataFrame:
         )
     )
     return out.filter(pl.col("played")) if played_only else out
+
+
+def box_scores(data: Path = DATA, played_only: bool = True) -> pl.DataFrame:
+    """Player-game box scores from the Parquet snapshot."""
+    return box_scores_from_frames(
+        pl.read_parquet(data / "nba" / "player_box_score.parquet"),
+        pl.read_parquet(data / "nba" / "league_game_schedule.parquet"),
+        played_only=played_only,
+    )
 
 
 def advanced_stats(data: Path = DATA) -> pl.DataFrame:

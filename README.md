@@ -86,18 +86,21 @@ statyx/schedule.parquet
 util/player_id_map_vw.parquet
 ```
 
-### Refresh from the live database
+### Read from the live database
 
-The scheduled data stage uses `scs-hub` and its read-only `cockroach-read`
-connection:
+The pipeline reads the live database by default through `scs-hub` and its
+read-only `cockroach-read` connection:
 
 ```bash
 uv sync --group data
-uv run python -m scripts.refresh_data
+uv run --group data python -m scripts.pipeline
 ```
 
-It pulls only the seven objects above and writes `_snapshot.json` alongside
-them. Credentials come from `SCS_HUB_CREDENTIALS` or
+`scripts/pipeline.py` selects only the box-score and schedule columns the
+features use, so it does not depend on a local snapshot. The Parquet loaders
+remain for the research scripts, but production has no offline path.
+
+Credentials come from `SCS_HUB_CREDENTIALS` or
 `~/.config/scs_hub_credentials.ini`. The host needs `libpq` to build
 `psycopg2` and a headless JRE (`openjdk-17-jre-headless`) because `scs-hub`
 imports `nbainjuries` at load time.
@@ -124,21 +127,34 @@ assigned = model.assign(design)
 
 ## Scheduled pipeline
 
-The full job is refresh, then assign:
+The weekly production entry point is `scripts.job`. It reads live, loads the
+frozen seasonal model, assigns the current season, publishes, and writes a
+status row to `util.update_log`:
 
 ```bash
 uv sync --group data
-uv run python -m scripts.refresh_data
-uv run python -m scripts.pipeline --require-snapshot --max-snapshot-age-days 7
+uv run --group data python -m scripts.job --cadence weekly
 ```
 
-`scripts/pipeline.py` loads the saved model or fits one if none exists, assigns
-roles, and writes `assignments.parquet`, `role_profiles.parquet` and
-`run.json` under `artifacts/pipeline/`. Add `--refit` on the weekly run to fit
-a new mixture before assigning.
+It fails before assigning if the newest played game is more than seven days old
+(`--max-data-age-days`), if `model.pkl` is missing, or if the publish fails.
+The pipeline and publish stages remain available separately for debugging.
 
-It exits non-zero on failure, so it can be called directly from cron or a
-systemd timer.
+Refit only once per season:
+
+```bash
+uv run --group data python -m scripts.pipeline \
+  --refit --cutoff 2026-10-20 --k 10 \
+  --window 10 --min-periods 5 --min-prior-games 5 \
+  --sample 0 --regular-season-only
+```
+
+`scripts/publish.py` writes the `mod.player_role*` tables through the
+`cockroach-write` connection. It publishes the current season only by default;
+`--all-seasons` is the explicit retrospective backcast.
+
+Both scripts exit non-zero on failure, so they can be called directly from cron
+or a systemd timer.
 
 ## Reproduce
 

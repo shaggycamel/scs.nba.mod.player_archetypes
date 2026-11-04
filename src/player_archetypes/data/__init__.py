@@ -5,6 +5,6 @@ Set `PLAYER_ARCHETYPES_DATA` to the directory containing `nba/`, `statyx/` and
 part of this repository.
 """
 
-from player_archetypes.data import ids, load
+from player_archetypes.data import ids, live, load
 
-__all__ = ["ids", "load"]
+__all__ = ["ids", "live", "load"]

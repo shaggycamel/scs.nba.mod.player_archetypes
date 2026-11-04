@@ -45,15 +45,14 @@ def player_map(data: Path = DATA) -> pl.DataFrame:
     )
 
 
-def nba_schedule(data: Path = DATA) -> pl.DataFrame:
+def nba_schedule_from_frame(schedule: pl.DataFrame) -> pl.DataFrame:
     """One row per nba game, with date, season and home/away abbreviations.
 
     The raw table is team-level (two rows per game); we keep the home row so
     that `team` is the home side and `opponent` the visitor.
     """
     return (
-        pl.read_parquet(data / "nba" / "league_game_schedule.parquet")
-        .filter(pl.col("home"))
+        schedule.filter(pl.col("home"))
         .select(
             pl.col("game_id").alias("nba_game_id"),
             "game_date",
@@ -63,6 +62,13 @@ def nba_schedule(data: Path = DATA) -> pl.DataFrame:
             pl.col("opponent").alias("away_abbr"),
         )
         .unique(subset=["nba_game_id"])
+    )
+
+
+def nba_schedule(data: Path = DATA) -> pl.DataFrame:
+    """One row per nba game from the Parquet snapshot."""
+    return nba_schedule_from_frame(
+        pl.read_parquet(data / "nba" / "league_game_schedule.parquet")
     )
 
 

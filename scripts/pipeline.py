@@ -1,12 +1,12 @@
 """Fit or load the archetype model, assign roles, and publish the artifacts.
 
-This is the scheduled entry point. It starts from an existing Parquet snapshot
-(refreshed separately), so it never touches the database.
+This is the scheduled entry point. It reads the live database through scs-hub's
+read-only connection; there is no offline snapshot path.
 
 Usage:
-    uv run python -m scripts.pipeline                 # load the saved model, assign
-    uv run python -m scripts.pipeline --refit         # fit a new model first
-    uv run python -m scripts.pipeline --cutoff 2026-11-01 --refit
+    uv run --group data python -m scripts.pipeline    # live DB, saved model
+    uv run --group data python -m scripts.pipeline --refit
+    uv run --group data python -m scripts.pipeline --cutoff 2026-10-20 --refit
 
 Outputs, under ``artifacts/pipeline/`` by default:
 
@@ -28,8 +28,7 @@ from pathlib import Path
 import polars as pl
 
 from player_archetypes import cluster, features
-from player_archetypes.data import load
-from player_archetypes.data.ids import DATA
+from player_archetypes.data import live, load
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE_COLUMNS = ("role_label", "role_confidence", "role_entropy")
@@ -39,13 +38,35 @@ def log(message: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
 
 
+def regular_season_only(box: pl.DataFrame, enabled: bool) -> pl.DataFrame:
+    """Keep only regular-season rows before any rolling feature is built."""
+    if not enabled:
+        return box
+    return box.filter(pl.col("season_type") == "Regular Season")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--data",
-        type=Path,
-        default=DATA,
-        help="Parquet snapshot root containing nba/, statyx/ and util/",
+        "--db-con",
+        default="cockroach-read",
+        help="credentials.ini section used for live reads",
+    )
+    parser.add_argument(
+        "--max-data-age-days",
+        type=int,
+        default=7,
+        help="fail if the newest played game is older than this many days; 0 disables",
+    )
+    parser.add_argument(
+        "--regular-season-only",
+        action="store_true",
+        help="exclude preseason, All-Star and playoff games before building features",
+    )
+    parser.add_argument(
+        "--current-season-only",
+        action="store_true",
+        help="write only the latest season to assignments.parquet and run.json",
     )
     parser.add_argument(
         "--out",
@@ -72,7 +93,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--k", type=int, default=10, help="number of roles")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--window", type=int, default=20, help="trailing games per feature")
+    parser.add_argument("--window", type=int, default=10, help="trailing games per feature")
     parser.add_argument("--min-periods", type=int, default=5)
     parser.add_argument("--min-prior-games", type=int, default=5)
     parser.add_argument(
@@ -80,17 +101,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=120_000,
         help="maximum rows used to fit the mixture (0 fits all)",
-    )
-    parser.add_argument(
-        "--require-snapshot",
-        action="store_true",
-        help="fail unless the data directory has a _snapshot.json manifest",
-    )
-    parser.add_argument(
-        "--max-snapshot-age-days",
-        type=int,
-        default=None,
-        help="fail if the snapshot manifest is older than this many days",
     )
     return parser.parse_args(argv)
 
@@ -142,43 +152,68 @@ def _package_version() -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    data_dir = Path(args.data).expanduser().resolve()
-    box_path = data_dir / "nba" / "player_box_score.parquet"
-    if not box_path.exists():
-        print(f"error: no box scores at {box_path}", flush=True)
-        return 2
 
     out_dir = Path(args.out).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = Path(args.model).expanduser() if args.model else out_dir / "model.pkl"
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
-    snapshot_path = data_dir / "_snapshot.json"
-    if snapshot_path.exists():
-        snapshot = json.loads(snapshot_path.read_text())
-        log(
-            f"snapshot: last played {snapshot.get('max_game_date')}, "
-            f"fetched {snapshot.get('fetched_at')}"
+    refit = args.refit or args.cutoff is not None
+    if not refit and not model_path.exists():
+        print(
+            f"error: no saved model at {model_path}; pass --refit to train one",
+            flush=True,
         )
-        if args.max_snapshot_age_days is not None:
-            fetched = datetime.fromisoformat(snapshot["fetched_at"])
-            age_days = (datetime.now(UTC) - fetched).days
-            if age_days > args.max_snapshot_age_days:
-                print(
-                    f"error: snapshot is {age_days} days old "
-                    f"(limit {args.max_snapshot_age_days}); refresh it first",
-                    flush=True,
-                )
-                return 2
-    elif args.require_snapshot:
-        print(f"error: no snapshot manifest at {snapshot_path}", flush=True)
         return 2
-    else:
-        log("no _snapshot.json; assuming the data directory was refreshed externally")
 
-    log(f"loading box scores from {data_dir}")
-    box = load.box_scores(data_dir)
+    try:
+        from scs_hub import SportsHub
+    except ImportError:
+        print(
+            "error: the pipeline requires scs-hub; run with "
+            "`uv run --group data python -m scripts.pipeline`",
+            flush=True,
+        )
+        return 2
+
+    log(f"reading live tables with [{args.db_con}]")
+    hub = SportsHub(db_con=args.db_con)
+    raw_box = live.read_box_scores(hub.db)
+    schedule = live.read_schedule(hub.db)
+    box = load.box_scores_from_frames(raw_box, schedule)
+    source = {
+        "source": "live",
+        "db_con": args.db_con,
+        "raw_box_rows": raw_box.height,
+    }
+
     log(f"{box.height:,} played player-games")
+    latest_game = box["game_date"].max()
+    data_age_days = (
+        (datetime.now(UTC).date() - latest_game).days if latest_game is not None else None
+    )
+    if latest_game is None:
+        print("error: the live database returned no played games", flush=True)
+        return 2
+    log(f"latest played game: {latest_game} ({data_age_days} days old)")
+    if args.max_data_age_days and data_age_days > args.max_data_age_days:
+        print(
+            f"error: live data is {data_age_days} days old "
+            f"(limit {args.max_data_age_days}); the upstream update may have failed",
+            flush=True,
+        )
+        return 2
+    source["max_game_date"] = str(latest_game)
+    source["data_age_days"] = data_age_days
+
+    if args.regular_season_only:
+        before = box.height
+        box = regular_season_only(box, True)
+        log(
+            f"regular season only: {box.height:,} of {before:,} "
+            f"played player-games retained"
+        )
+    season_type = "Regular Season" if args.regular_season_only else None
 
     pg = features.usage_history(features.per_game(box))
     rolled = features.rolling(pg, window=args.window, min_periods=args.min_periods)
@@ -193,7 +228,6 @@ def main(argv: list[str] | None = None) -> int:
         f"{design['game_date'].min()} to {design['game_date'].max()}"
     )
 
-    refit = args.refit or args.cutoff is not None or not model_path.exists()
     fit_rows: int | None = None
     if refit:
         cutoff = args.cutoff or date.today()
@@ -204,7 +238,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.sample and train.height > args.sample:
             train = train.sample(args.sample, seed=args.seed)
         log(f"fitting k={args.k} on {train.height:,} rows before {cutoff}")
-        model = cluster.fit(train, names, k=args.k, cutoff=cutoff, seed=args.seed)
+        model = cluster.fit(
+            train,
+            names,
+            k=args.k,
+            cutoff=cutoff,
+            seed=args.seed,
+            window=args.window,
+            min_periods=args.min_periods,
+            min_prior_games=args.min_prior_games,
+            season_type=season_type,
+        )
         _save_model(model, model_path)
         fit_rows = train.height
         mode = "refit"
@@ -220,6 +264,26 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
             return 2
+        expected = {
+            "window": args.window,
+            "min_periods": args.min_periods,
+            "min_prior_games": args.min_prior_games,
+            "season_type": season_type,
+        }
+        mismatches = [
+            f"  {key}: model {getattr(model, key, None)!r}, "
+            f"runtime {value!r}"
+            for key, value in expected.items()
+            if getattr(model, key, None) != value
+        ]
+        if mismatches:
+            print(
+                "error: saved model was built with different settings\n"
+                + "\n".join(mismatches),
+                flush=True,
+            )
+            return 2
+        fit_rows = getattr(model, "fit_rows", None)
         mode = "assign"
 
     log("assigning roles")
@@ -238,7 +302,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         if column in assigned.columns
     ]
-    published = assigned.select([*keys, *ROLE_COLUMNS, *role_cols])
+    published = assigned.select([*keys, *ROLE_COLUMNS, *role_cols, *names])
+    if args.current_season_only:
+        seasons = published["season"].drop_nulls()
+        if seasons.len() == 0:
+            print("error: no season available for --current-season-only", flush=True)
+            return 2
+        current_season = seasons.max()
+        before = published.height
+        published = published.filter(pl.col("season") == current_season)
+        log(
+            f"current season only ({current_season}): "
+            f"{published.height:,} of {before:,} rows retained"
+        )
 
     assignments_path = out_dir / "assignments.parquet"
     profiles_path = out_dir / "role_profiles.parquet"
@@ -246,9 +322,9 @@ def main(argv: list[str] | None = None) -> int:
     _atomic_parquet(cluster.profile(assigned, names), profiles_path)
 
     shares = (
-        assigned.group_by("role_label")
+        published.group_by("role_label")
         .agg(pl.len().alias("n"))
-        .with_columns(share=pl.col("n") / assigned.height)
+        .with_columns(share=pl.col("n") / published.height)
         .sort("role_label")
     )
     meta = {
@@ -256,13 +332,14 @@ def main(argv: list[str] | None = None) -> int:
         "mode": mode,
         "git_sha": _git_sha(),
         "package_version": _package_version(),
-        "data_dir": str(data_dir),
+        "source": source,
         "design": {
             "rows": design.height,
             "players": int(design["player_id"].n_unique()),
             "date_min": str(design["game_date"].min()),
             "date_max": str(design["game_date"].max()),
             "features": names,
+            "season_type": season_type,
             "window": args.window,
             "min_periods": args.min_periods,
             "min_prior_games": args.min_prior_games,
@@ -274,11 +351,20 @@ def main(argv: list[str] | None = None) -> int:
             "seed": args.seed,
             "covariance_type": model.gmm.covariance_type,
             "fit_rows": fit_rows,
+            "window": getattr(model, "window", None),
+            "min_periods": getattr(model, "min_periods", None),
+            "min_prior_games": getattr(model, "min_prior_games", None),
+            "season_type": getattr(model, "season_type", None),
         },
         "assignments": {
             "rows": published.height,
-            "mean_confidence": float(assigned["role_confidence"].mean()),
-            "frac_ambiguous": float((assigned["role_confidence"] < 0.6).mean()),
+            "season": (
+                str(published["season"].max())
+                if args.current_season_only
+                else None
+            ),
+            "mean_confidence": float(published["role_confidence"].mean()),
+            "frac_ambiguous": float((published["role_confidence"] < 0.6).mean()),
             "cluster_shares": {
                 str(row["role_label"]): round(row["share"], 6)
                 for row in shares.iter_rows(named=True)

@@ -34,6 +34,12 @@ class RoleModel:
     gmm: GaussianMixture
     names: list[str]
     cutoff: date | None
+    window: int | None = None
+    min_periods: int | None = None
+    min_prior_games: int | None = None
+    season_type: str | None = None
+    fit_rows: int | None = None
+    seed: int = 0
 
     def _matrix(self, df: pl.DataFrame) -> np.ndarray:
         x = self.scaler.transform(df.select(self.names).to_numpy())
@@ -69,6 +75,10 @@ def fit(
     n_pca: int | None = None,
     seed: int = 0,
     covariance_type: str = "full",
+    window: int | None = None,
+    min_periods: int | None = None,
+    min_prior_games: int | None = None,
+    season_type: str | None = None,
 ) -> RoleModel:
     """Fit a k-role mixture on rows strictly before `cutoff`."""
     train = df.filter(pl.col("game_date") < cutoff) if cutoff is not None else df
@@ -88,7 +98,19 @@ def fit(
         n_init=4,
         max_iter=500,
     ).fit(x)
-    return RoleModel(scaler=scaler, pca=pca, gmm=gmm, names=names, cutoff=cutoff)
+    return RoleModel(
+        scaler=scaler,
+        pca=pca,
+        gmm=gmm,
+        names=names,
+        cutoff=cutoff,
+        window=window,
+        min_periods=min_periods,
+        min_prior_games=min_prior_games,
+        season_type=season_type,
+        fit_rows=train.height,
+        seed=seed,
+    )
 
 
 def select_k(
