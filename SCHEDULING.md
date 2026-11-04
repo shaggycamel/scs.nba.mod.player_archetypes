@@ -102,14 +102,57 @@ VALUES
 5. Verify the Jetson runner creates a `util.update_log` row and the current
    season rows in `mod.player_role`.
 
+## Option C — NUC triggers the Jetson over SSH
+
+This keeps the model and `model.pkl` on the Jetson while letting the NUC own
+the schedule. It is the recommended option when the model must not move.
+
+1. Create a dedicated SSH key on the NUC for the trigger.
+2. On the Jetson, restrict that key in `~/.ssh/authorized_keys` to one forced
+   command, for example:
+
+   ```text
+   command="/home/oli/shaggy_camel_sports/nba/mod/player_archetypes/scripts/remote_job.sh",no-agent-forwarding,no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding ssh-ed25519 AAAA... nuc-archetypes
+   ```
+
+3. `scripts/remote_job.sh` runs:
+
+   ```bash
+   exec uv run --group data python -m scripts.job --cadence weekly_after_daily
+   ```
+
+4. Add the `util.update_schedule` row with cadence `weekly_after_daily`, as in
+   Option A. The NUC cron passes that cadence at 14:00 UTC, after the daily
+   NBA update.
+5. Bridge the runner to SSH. Either:
+   - add an external-command hook to `scs.nba.database/__main__.py` that maps
+     `player_archetypes.trigger` to the SSH command, or
+   - run a host-side NUC cron wrapper that reads the schedule row and then
+     calls SSH.
+6. The NUC container needs an SSH client and the private key if the bridge
+   lives in the database runner. A host-side wrapper avoids mounting a key
+   into the container.
+7. Let the Jetson job write the detailed `util.update_log` row. The NUC
+   trigger should log a separate `player_archetypes.trigger` row, or no row,
+   so the same run is not double-counted.
+
+Example SSH invocation:
+
+```bash
+ssh -i /path/to/nuc_archetypes_key \
+  -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 \
+  oli@jetson.tail195465.ts.net
+```
+
 ## Decision required
 
 Choose the compute host:
 
 - **NUC** — the existing database scheduler owns execution; the model and
   `model.pkl` must be deployed there.
-- **Jetson** — the model stays where it was trained; `util.update_schedule`
-  remains the registry, but a small Jetson runner is required.
+- **Jetson** — the model stays where it was trained; either a Jetson-side
+  runner polls `util.update_schedule` (Option B), or the NUC triggers it over
+  SSH (Option C). Option C is the cleaner fit for the existing scheduler.
 
 ## Definition of done
 
