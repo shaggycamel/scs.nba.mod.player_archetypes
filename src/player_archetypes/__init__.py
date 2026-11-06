@@ -13,7 +13,14 @@ its inputs. The parquet loaders live in `player_archetypes.data` so the core
 model can be used without the source snapshot.
 """
 
-from player_archetypes import cluster, features
+from player_archetypes import cluster, features, naming
 from player_archetypes.cluster import ArchetypeModel, RoleModel, fit
 
-__all__ = ["ArchetypeModel", "RoleModel", "cluster", "features", "fit"]
+__all__ = [
+    "ArchetypeModel",
+    "RoleModel",
+    "cluster",
+    "features",
+    "fit",
+    "naming",
+]

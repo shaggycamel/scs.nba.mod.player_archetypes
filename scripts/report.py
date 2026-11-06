@@ -10,6 +10,7 @@ from pathlib import Path
 
 import polars as pl
 
+from player_archetypes.naming import describe_archetypes
 from scripts.svgkit import esc, grouped_hbar, hbar_chart, heatmap, line_chart, table_view
 
 ART = Path("artifacts")
@@ -45,50 +46,13 @@ def nice(c: str) -> str:
 # Archetype naming, derived from each archetype's own z-score signature
 # ---------------------------------------------------------------------------
 prof = pl.read_parquet(ART / "archetype_profiles.parquet")
+if "archetype_description" not in prof.columns:
+    prof = describe_archetypes(prof)
 feat_cols = [c for c in prof.columns if c.startswith("r_")]
-
-
-def name_archetype(row: dict) -> str:
-    """Name a archetype from its own z-score signature, by rule.
-
-    The order matters: the most specific signatures are tested first. These
-    thresholds were set against the fitted profiles and are the one piece of
-    interpretation in the pipeline -- every number elsewhere is computed.
-    """
-    z = lambda c: row.get(c, 0.0)
-    oreb, blk, three = z("r_oreb_pct"), z("r_blk_per_min"), z("r_fg3a_share")
-    ast, astr = z("r_ast_pct"), z("r_ast_ratio")
-    mins, start, fga = z("r_min"), z("r_start_rate"), z("r_fga_per_min")
-
-    if oreb > 1.0 and three < -1.0:
-        return "Rim-running center"
-    if ast > 1.0 and mins > 0.8 and fga > 0.5:
-        return "Primary creator"
-    if ast > 1.0:
-        return "Playmaking guard"
-    if oreb > 0.4 and blk > 0.4 and ast < -0.5:
-        return "Interior finisher"
-    if mins < -1.0:
-        return "Deep reserve"
-    if start > 0.8:
-        return "Starting big" if ast < 0 else "Starting wing"
-    if three > 0.6 and start < -0.5:
-        return "Bench shooter"
-    if three > 0.6:
-        return "Floor spacer"
-    if astr > 0.6 and fga < -0.4:
-        return "Low-usage connector"
-    if start < -0.8:
-        return "Bench wing"
-    return "Connective wing"
-
-
-names_by_label: dict[int, str] = {}
-used: dict[str, int] = {}
-for row in prof.iter_rows(named=True):
-    base = name_archetype(row)
-    used[base] = used.get(base, 0) + 1
-    names_by_label[row["archetype_label"]] = base if used[base] == 1 else f"{base} {used[base]}"
+names_by_label = {
+    row["archetype_label"]: row["archetype_description"]
+    for row in prof.iter_rows(named=True)
+}
 
 
 def rl(label: int) -> str:

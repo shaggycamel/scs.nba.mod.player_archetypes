@@ -22,6 +22,10 @@ The labels are convenience output. The responsibilities are the representation:
 a player who does two jobs gets weight on two archetypes instead of being forced into
 one integer category.
 
+The published `mod.player_archetype_profile` table adds a human-readable
+`archetype_description` immediately after `archetype_label`; it is derived from
+the same feature z-scores as the labels.
+
 ## Design rules
 
 - **Rate, not volume.** Counting stats are per-minute; shot types are shares of

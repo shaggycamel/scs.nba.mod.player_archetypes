@@ -20,6 +20,8 @@ from pathlib import Path
 import polars as pl
 from sqlalchemy import text
 
+from player_archetypes.naming import describe_archetypes
+
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 KEY_COLUMNS = (
     "game_id",
@@ -156,6 +158,7 @@ def create_tables(
         f"""
         CREATE TABLE IF NOT EXISTS {profile_table} (
             archetype_label INT8 NOT NULL PRIMARY KEY,
+            archetype_description STRING,
             n INT8,
         {feature_defs},
             model_cutoff DATE
@@ -205,11 +208,26 @@ def prepare_assignments(frame: pl.DataFrame, model_cutoff: date) -> pl.DataFrame
 
 
 def prepare_profiles(frame: pl.DataFrame, model_cutoff: date) -> pl.DataFrame:
-    return frame.with_columns(
-        pl.col("archetype_label").cast(pl.Int64),
-        pl.col("n").cast(pl.Int64),
-        pl.lit(model_cutoff).alias("model_cutoff"),
-    ).sort("archetype_label")
+    if "archetype_description" not in frame.columns:
+        frame = describe_archetypes(frame)
+    features = sorted(column for column in frame.columns if column.startswith("r_"))
+    return (
+        frame.with_columns(
+            pl.col("archetype_label").cast(pl.Int64),
+            pl.col("n").cast(pl.Int64),
+            pl.lit(model_cutoff).alias("model_cutoff"),
+        )
+        .select(
+            [
+                "archetype_label",
+                "archetype_description",
+                "n",
+                *features,
+                "model_cutoff",
+            ]
+        )
+        .sort("archetype_label")
+    )
 
 
 def prepare_current(assignments: pl.DataFrame, season: str) -> pl.DataFrame:

@@ -19,7 +19,7 @@ from sklearn.metrics import adjusted_rand_score, mean_absolute_error
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
-from player_archetypes import cluster, features
+from player_archetypes import cluster, features, naming
 from player_archetypes.data import load
 
 ART = Path("artifacts")
@@ -151,7 +151,9 @@ assigned.select(
     *[f"archetype_{i}" for i in range(K)],
 ).write_parquet(ART / "assignments.parquet")
 
-cluster.profile(assigned, names).write_parquet(ART / "archetype_profiles.parquet")
+naming.describe_archetypes(cluster.profile(assigned, names)).write_parquet(
+    ART / "archetype_profiles.parquet"
+)
 
 recent = assigned.filter(pl.col("season") == "2025-26")
 exemplars = (

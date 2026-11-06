@@ -11,6 +11,7 @@ import polars as pl
 
 from player_archetypes import cluster
 from player_archetypes.data.load import listed_positions
+from player_archetypes.naming import describe_archetypes
 
 design_path = sys.argv[1]
 k = int(sys.argv[2])
@@ -26,7 +27,7 @@ assigned = model.assign(X)
 print("=" * 78)
 print("ARCHETYPE PROFILES (feature means as z-scores; |z| > 0.5 is the archetype's signature)")
 print("=" * 78)
-prof = cluster.profile(assigned, names)
+prof = describe_archetypes(cluster.profile(assigned, names))
 with pl.Config(tbl_cols=20, tbl_width_chars=240, tbl_rows=30):
     print(prof)
 
@@ -39,7 +40,10 @@ for row in prof.iter_rows(named=True):
         ((c, row[c]) for c in names), key=lambda kv: abs(kv[1]), reverse=True
     )[:5]
     desc = ", ".join(f"{c.removeprefix('r_')} {v:+.2f}" for c, v in feats)
-    print(f"archetype {label} (n={row['n']:>6,}): {desc}")
+    print(
+        f"archetype {label} · {row['archetype_description']} "
+        f"(n={row['n']:>6,}): {desc}"
+    )
 
 print("\n" + "=" * 78)
 print("EXEMPLARS: highest-confidence player-seasons per archetype (2025-26)")

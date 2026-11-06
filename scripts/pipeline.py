@@ -27,7 +27,7 @@ from pathlib import Path
 
 import polars as pl
 
-from player_archetypes import cluster, features
+from player_archetypes import cluster, features, naming
 from player_archetypes.data import live, load
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -318,8 +318,9 @@ def main(argv: list[str] | None = None) -> int:
 
     assignments_path = out_dir / "assignments.parquet"
     profiles_path = out_dir / "archetype_profiles.parquet"
+    profiles = naming.describe_archetypes(cluster.profile(assigned, names))
     _atomic_parquet(published, assignments_path)
-    _atomic_parquet(cluster.profile(assigned, names), profiles_path)
+    _atomic_parquet(profiles, profiles_path)
 
     shares = (
         published.group_by("archetype_label")
