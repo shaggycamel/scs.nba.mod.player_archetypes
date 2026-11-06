@@ -15,9 +15,9 @@ The scheduler and operational safeguards are what remain.
 - Model metadata (window, min-periods, prior-games, season type, fit rows, seed)
   is saved in `model.pkl` and checked on load.
 - Missing `model.pkl` fails the run instead of silently refitting.
-- `scripts/publish.py` creates and fills `mod.player_role`,
-  `mod.player_role_current`, `mod.player_role_profile` and
-  `mod.player_role_model` through `[cockroach-write]`.
+- `scripts/publish.py` creates and fills `mod.player_archetype`,
+  `mod.player_archetype_current`, `mod.player_archetype_profile` and
+  `mod.player_archetype_model` through `[cockroach-write]`.
 - The publisher writes the current season only by default; historical backcasts
   require `--all-seasons`.
 - Read access granted to `kobe_public`.
@@ -72,7 +72,7 @@ The scheduler and operational safeguards are what remain.
     - Refit in preseason with cutoff at the first regular-season game.
     - Keep the taxonomy frozen for the season.
 
-11. **Role stability monitoring**
+11. **Archetype stability monitoring**
     - Compare seasonal fits (ARI, cluster shares, confidence).
     - Flag a refit that collapses or reshuffles the taxonomy.
 

@@ -26,7 +26,7 @@ from player_archetypes.data.ids import (
 )
 
 # usg_pct / e_usg_pct are the modelling target; poss and pace are team-level
-# tempo, not individual role. None of these may enter the clustering inputs.
+# tempo, not individual archetype. None of these may enter the clustering inputs.
 TARGET_COLS = ("usg_pct", "e_usg_pct")
 
 

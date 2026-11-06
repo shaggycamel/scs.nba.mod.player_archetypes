@@ -13,7 +13,7 @@ import polars as pl
 from scripts.svgkit import esc, grouped_hbar, hbar_chart, heatmap, line_chart, table_view
 
 ART = Path("artifacts")
-OUT = Path("docs/role_clustering_report.html")
+OUT = Path("docs/archetype_clustering_report.html")
 M = json.loads((ART / "meta.json").read_text())
 K = M["k"]
 
@@ -38,18 +38,18 @@ PRETTY = {
     "min_last5": "minutes, last 5",
 }
 def nice(c: str) -> str:
-    return PRETTY.get(c, c.replace("role_", "role ").replace("r_", ""))
+    return PRETTY.get(c, c.replace("archetype_", "archetype ").replace("r_", ""))
 
 
 # ---------------------------------------------------------------------------
-# Role naming, derived from each role's own z-score signature
+# Archetype naming, derived from each archetype's own z-score signature
 # ---------------------------------------------------------------------------
-prof = pl.read_parquet(ART / "role_profiles.parquet")
+prof = pl.read_parquet(ART / "archetype_profiles.parquet")
 feat_cols = [c for c in prof.columns if c.startswith("r_")]
 
 
-def name_role(row: dict) -> str:
-    """Name a role from its own z-score signature, by rule.
+def name_archetype(row: dict) -> str:
+    """Name a archetype from its own z-score signature, by rule.
 
     The order matters: the most specific signatures are tested first. These
     thresholds were set against the fitted profiles and are the one piece of
@@ -86,9 +86,9 @@ def name_role(row: dict) -> str:
 names_by_label: dict[int, str] = {}
 used: dict[str, int] = {}
 for row in prof.iter_rows(named=True):
-    base = name_role(row)
+    base = name_archetype(row)
     used[base] = used.get(base, 0) + 1
-    names_by_label[row["role_label"]] = base if used[base] == 1 else f"{base} {used[base]}"
+    names_by_label[row["archetype_label"]] = base if used[base] == 1 else f"{base} {used[base]}"
 
 
 def rl(label: int) -> str:
@@ -114,27 +114,27 @@ best_base = usage.filter(pl.col("model").str.starts_with("baseline")).sort("mae"
 best_model = usage.filter(~pl.col("model").str.starts_with("baseline")).sort("mae")
 bb, bm = best_base.row(0, named=True), best_model.row(0, named=True)
 
-no_role = usage.filter(pl.col("model").str.contains("usage history only")).sort("mae")
-any_role = usage.filter(
-    pl.col("model").str.contains("role")
+no_archetype = usage.filter(pl.col("model").str.contains("usage history only")).sort("mae")
+any_archetype = usage.filter(
+    pl.col("model").str.contains("archetype")
     & ~pl.col("model").str.starts_with("baseline")
-    & ~pl.col("model").str.contains("role features only")
+    & ~pl.col("model").str.contains("archetype features only")
 ).sort("mae")
-base_mae = no_role["mae"][0]
-role_mae = any_role["mae"][0]
-delta_pct = (base_mae - role_mae) / base_mae * 100
+base_mae = no_archetype["mae"][0]
+archetype_mae = any_archetype["mae"][0]
+delta_pct = (base_mae - archetype_mae) / base_mae * 100
 best_baseline_mae = best_base["mae"][0]
-vs_baseline_pct = (best_baseline_mae - role_mae) / best_baseline_mae * 100
+vs_baseline_pct = (best_baseline_mae - archetype_mae) / best_baseline_mae * 100
 
 hero = f"""
 <div class="tiles">
-  <div class="tile"><div class="tile-k">Roles found</div><div class="tile-v">{K}</div>
+  <div class="tile"><div class="tile-k">Archetypes found</div><div class="tile-v">{K}</div>
     <div class="tile-n">chosen on held-out likelihood, not a silhouette score</div></div>
   <div class="tile"><div class="tile-k">Player-games</div><div class="tile-v">{M['design_rows']:,}</div>
     <div class="tile-n">{M['players']:,} players, {M['date_min']} to {M['date_max']}</div></div>
   <div class="tile"><div class="tile-k">Best MAE on usage</div><div class="tile-v">{bm['mae']:.4f}</div>
     <div class="tile-n">vs {bb['mae']:.4f} for the best naive baseline</div></div>
-  <div class="tile {'good' if delta_pct > 1.0 else 'flat'}"><div class="tile-k">Gain from adding roles</div>
+  <div class="tile {'good' if delta_pct > 1.0 else 'flat'}"><div class="tile-k">Gain from adding archetypes</div>
     <div class="tile-v">{delta_pct:+.2f}%</div>
     <div class="tile-n">MAE vs the same model on usage history alone &mdash; not a meaningful gain</div></div>
 </div>"""
@@ -142,36 +142,36 @@ hero = f"""
 # --- 0. Verdict -----------------------------------------------------------
 _pts = pl.read_parquet(ART / "playtype_summary.parquet") if (ART / "playtype_summary.parquet").exists() else None
 if _pts is not None:
-    _rf = float(_pts.filter((pl.col("variant") == "full season") & (pl.col("features") == "roles (soft)"))["mean_cv_r2"][0])
+    _rf = float(_pts.filter((pl.col("variant") == "full season") & (pl.col("features") == "archetypes (soft)"))["mean_cv_r2"][0])
     _pf = float(_pts.filter((pl.col("variant") == "full season") & (pl.col("features") == "listed position"))["mean_cv_r2"][0])
 else:
     _rf = _pf = float("nan")
 
 section(
     "Verdict, up front",
-    f"""<p><strong>The roles beat listed position at describing how players play, and they do
+    f"""<p><strong>The archetypes beat listed position at describing how players play, and they do
     not improve a next-game usage model.</strong> Both are true, and the first is the one that
     answers the original question.</p>
     <p><strong>They describe the game better.</strong> Against play-type data the clustering
-    never saw &mdash; spot-up, isolation, pick-and-roll handling, cuts &mdash; the roles reach a
+    never saw &mdash; spot-up, isolation, pick-and-roll handling, cuts &mdash; the archetypes reach a
     mean cross-validated R&sup2; of {_rf:.3f} against {_pf:.3f} for listed position, a
     {_rf / _pf:.1f}&times; gap (section 9). On spot-ups and isolations, position's R&sup2; is
     <em>negative</em>: knowing a player is a "Guard" predicts his spot-up rate worse than
-    guessing the league mean. The ten roles are also legible without being told what to look
+    guessing the league mean. The ten archetypes are also legible without being told what to look
     for &mdash; one is Mitchell Robinson, Steven Adams and Biyombo; another is Duncan Robinson,
     Sam Hauser and Nesmith; another is Jokic, Doncic and Gilgeous-Alexander. Nothing in the
     inputs knew about position, usage, or player identity.</p>
-    <p><strong>They do not help predict usage.</strong> Adding roles to a usage model moves MAE
-    from {base_mae:.5f} to {role_mae:.5f} &mdash; {delta_pct:.2f}%. The project brief says to
+    <p><strong>They do not help predict usage.</strong> Adding archetypes to a usage model moves MAE
+    from {base_mae:.5f} to {archetype_mae:.5f} &mdash; {delta_pct:.2f}%. The project brief says to
     keep clustering only if an ablation shows a gain; on that rule, for that model, it does not.
     The reason is visible in the feature importances: a player's own recent usage already
-    carries nearly everything the roles would say. Role features alone reach
-    {usage.filter(pl.col('model').str.contains('role features only')).sort('mae')['mae'][0]:.5f},
+    carries nearly everything the archetypes would say. Archetype features alone reach
+    {usage.filter(pl.col('model').str.contains('archetype features only')).sort('mae')['mae'][0]:.5f},
     about the last-20-games baseline &mdash; they substitute for usage history rather than add
     to it.</p>
     <p>So the honest reading is that next-game usage was the wrong test. Usage is strongly
     autocorrelated, and any slow-moving descriptor will look redundant beside it. Judged on what
-    position is actually used for &mdash; describing how a player operates &mdash; the roles are
+    position is actually used for &mdash; describing how a player operates &mdash; the archetypes are
     a clear improvement.</p>
     <p><strong>The real caveat is stability.</strong> Refit on different eras, the taxonomy
     agrees with itself at only {stab_min:.2f} to {stab_max:.2f} ARI. That is moderate. Before
@@ -185,17 +185,17 @@ section(
 spread = pl.read_parquet(ART / "position_spread.parquet")
 spread_chart = hbar_chart(
     spread["position"].to_list(),
-    spread["roles_spanned"].to_list(),
-    label="Effective number of roles each listed position spans",
-    value_label="roles spanned",
+    spread["archetypes_spanned"].to_list(),
+    label="Effective number of archetypes each listed position spans",
+    value_label="archetypes spanned",
     dp=2,
     label_w=170,
 )
 spread_table = table_view(
-    ["Listed position", "Player-games", "Entropy (nats)", "Effective roles spanned"],
-    [[r["position"], f"{r['n']:,}", f"{r['entropy']:.3f}", f"{r['roles_spanned']:.2f}"]
+    ["Listed position", "Player-games", "Entropy (nats)", "Effective archetypes spanned"],
+    [[r["position"], f"{r['n']:,}", f"{r['entropy']:.3f}", f"{r['archetypes_spanned']:.2f}"]
      for r in spread.iter_rows(named=True)],
-    "roles spanned per listed position",
+    "archetypes spanned per listed position",
 )
 section(
     "1. The premise, measured",
@@ -205,10 +205,10 @@ section(
     only starters get a value. <code>player_info.position</code> adds hyphenates but 4,946 of
     5,630 player-seasons are still a bare <em>Guard</em>, <em>Forward</em> or <em>Center</em>.</p>
     <p>The chart below is the quantitative form of your intuition: for each listed position,
-    the effective number of distinct roles its players actually occupy (the exponential of the
-    entropy of its role distribution). A label that described play would sit near 1.0.</p>
+    the effective number of distinct archetypes its players actually occupy (the exponential of the
+    entropy of its archetype distribution). A label that described play would sit near 1.0.</p>
     {spread_chart}{spread_table}""",
-    "If a position label spans four roles, it is discarding four-fifths of what it could say.",
+    "If a position label spans four archetypes, it is discarding four-fifths of what it could say.",
 )
 
 # --- 2. Data and defects --------------------------------------------------
@@ -238,7 +238,7 @@ section(
     healthy scratch.</p>{defects}
     <p>Coverage is lopsided across schemas. <code>player_box_score</code> runs 2009&ndash;2026;
     statyx <code>game_stats</code> and <code>schedule</code> cover four seasons;
-    <code>advanced_stats</code> two; and <code>play_types</code>, the richest role signal of all
+    <code>advanced_stats</code> two; and <code>play_types</code>, the richest archetype signal of all
     (spot-up / iso / pick-and-roll handler / roll man / post-up / cut / off-screen), exists for
     <strong>2025-26 only, at season grain</strong>. That last point decided the design: play-type
     data cannot be a model input without leaking within-season information, so the backbone is
@@ -250,12 +250,12 @@ section(
 section(
     "3. Method",
     f"""<ul class="method">
-    <li><strong>Rates, not volumes.</strong> Role is a mix of activities, so counting stats are
+    <li><strong>Rates, not volumes.</strong> Archetype is a mix of activities, so counting stats are
       per-minute and shot types are shares of the player's own attempts. The same shot diet at
-      12 or 36 minutes is the same role.</li>
+      12 or 36 minutes is the same archetype.</li>
     <li><strong>Usage excluded from the inputs.</strong> <code>usg_pct</code> and
-      <code>e_usg_pct</code> are the downstream target; letting them define the roles would make
-      any later "roles predict usage" result circular.</li>
+      <code>e_usg_pct</code> are the downstream target; letting them define the archetypes would make
+      any later "archetypes predict usage" result circular.</li>
     <li><strong>Efficiency excluded.</strong> <code>ts_pct</code>, <code>fg_pct</code> measure how
       well, not what. A cold-shooting spot-up shooter is still a spot-up shooter. The flag
       <code>include_efficiency=True</code> exists to test that claim.</li>
@@ -281,8 +281,8 @@ ksweep = pl.read_parquet(ART / "k_sweep.parquet")
 ll_chart = line_chart(
     ksweep["k"].to_list(),
     ksweep["heldout_loglik"].to_list(),
-    label="Held-out log-likelihood by number of roles",
-    x_label="number of roles (k)",
+    label="Held-out log-likelihood by number of archetypes",
+    x_label="number of archetypes (k)",
     y_label="held-out log-likelihood",
     highlight=K,
     highlight_note=f"k = {K} selected",
@@ -304,7 +304,7 @@ k_table = table_view(
     "k sweep",
 )
 section(
-    "4. How many roles?",
+    "4. How many archetypes?",
     f"""<p>Held-out log-likelihood is the honest criterion here. BIC is computed on data the
     mixture has already seen, and with 409,320 training rows it will keep paying for extra
     components almost indefinitely. The sweep therefore scores each k on a period the model
@@ -313,7 +313,7 @@ section(
     <p>Likelihood alone still creeps upward with k, so the selection rule is the smallest k
     within 1% of the best held-out likelihood that also leaves no cluster holding under 2% of
     held-out games. The second condition matters: past a point the mixture starts spending
-    components on tiny pockets rather than real roles.</p>
+    components on tiny pockets rather than real archetypes.</p>
     {share_chart}{k_table}""",
     "Chosen on out-of-sample likelihood with a floor on cluster size, not on a silhouette score.",
 )
@@ -338,7 +338,7 @@ stab_table = table_view(
     "stability, across eras and across seeds",
 )
 section(
-    "5. Do the roles survive refitting?",
+    "5. Do the archetypes survive refitting?",
     f"""<p>This is the test a position replacement has to pass and a purely predictive feature
     does not. If the taxonomy reshuffles whenever the fitting window moves, it is describing the
     sample rather than the game, and it cannot be the vocabulary of future analysis.</p>
@@ -352,46 +352,46 @@ section(
     "Era-to-era agreement matters more than seed-to-seed: the former tests the concept, the latter only the optimiser.",
 )
 
-# --- 6. The roles themselves ---------------------------------------------
-rows = prof.sort("role_label")
+# --- 6. The archetypes themselves ---------------------------------------------
+rows = prof.sort("archetype_label")
 zmat = [[row[c] for c in feat_cols] for row in rows.iter_rows(named=True)]
 prof_chart = heatmap(
-    [rl(r["role_label"]).replace("&middot;", "·") for r in rows.iter_rows(named=True)],
+    [rl(r["archetype_label"]).replace("&middot;", "·") for r in rows.iter_rows(named=True)],
     [nice(c) for c in feat_cols],
     zmat,
-    label="Role signatures as feature z-scores",
+    label="Archetype signatures as feature z-scores",
     diverging=True, value_dp=2, label_w=215, cell=36,
 )
 sig_rows = []
 for r in rows.iter_rows(named=True):
     top = sorted(((c, r[c]) for c in feat_cols), key=lambda kv: abs(kv[1]), reverse=True)[:4]
     sig_rows.append([
-        r["role_label"], names_by_label[r["role_label"]], f"{r['n']:,}",
+        r["archetype_label"], names_by_label[r["archetype_label"]], f"{r['n']:,}",
         ", ".join(f"{nice(c)} {v:+.2f}" for c, v in top),
     ])
 sig_table = table_view(
-    ["Role", "Name", "Player-games", "Signature (largest |z|)"], sig_rows, "role signatures")
+    ["Archetype", "Name", "Player-games", "Signature (largest |z|)"], sig_rows, "archetype signatures")
 
 ex = pl.read_parquet(ART / "exemplars.parquet")
 ex_html = []
 for label in range(K):
-    who = (ex.filter(pl.col("role_label") == label).sort("conf", descending=True)
+    who = (ex.filter(pl.col("archetype_label") == label).sort("conf", descending=True)
              .head(6)["player_name"].to_list())
     if who:
         ex_html.append(
-            f'<div class="rolecard"><div class="rolename">{rl(label)}</div>'
-            f'<div class="rolewho">{esc(", ".join(who))}</div></div>')
+            f'<div class="archetypecard"><div class="archetypename">{rl(label)}</div>'
+            f'<div class="archetypewho">{esc(", ".join(who))}</div></div>')
 section(
-    "6. What the roles are",
-    f"""<p>Each role is described by how far its members sit from the league average on every
+    "6. What the archetypes are",
+    f"""<p>Each archetype is described by how far its members sit from the league average on every
     feature, in standard deviations. Red is above average, blue below; the neutral midpoint is
     genuinely "league average", not a hue.</p>
     {prof_chart}{sig_table}
     <p class="sub">Highest-confidence members in 2025-26 (minimum 20 games). These names are the
-    real test of whether the roles mean anything &mdash; the labels above were assigned from the
+    real test of whether the archetypes mean anything &mdash; the labels above were assigned from the
     z-score signatures, not from who landed in them.</p>
-    <div class="rolegrid">{''.join(ex_html)}</div>""",
-    "Names are derived from each role's own signature by rule, so they cannot flatter the result.",
+    <div class="archetypegrid">{''.join(ex_html)}</div>""",
+    "Names are derived from each archetype's own signature by rule, so they cannot flatter the result.",
 )
 
 # --- 7. vs position ------------------------------------------------------
@@ -402,28 +402,28 @@ ctm = []
 for p in positions:
     tot = ct.filter(pl.col("position") == p)["n"].sum()
     ctm.append([
-        float(ct.filter((pl.col("position") == p) & (pl.col("role_label") == l))["n"].sum()) / tot * 100
+        float(ct.filter((pl.col("position") == p) & (pl.col("archetype_label") == l))["n"].sum()) / tot * 100
         for l in range(K)])
 ct_chart = heatmap(
     positions, [rl(l).replace("&middot;", "·") for l in range(K)], ctm,
-    label="Share of each listed position's player-games falling in each role",
+    label="Share of each listed position's player-games falling in each archetype",
     diverging=False, value_dp=1, cell_dp=0, unit="%", label_w=150, cell=40,
 )
 section(
-    "7. Roles against listed position",
-    f"""<p>Reading across a row shows how one listed position scatters across roles. If position
-    carried the same information as role, each row would be a single dark cell.</p>
+    "7. Archetypes against listed position",
+    f"""<p>Reading across a row shows how one listed position scatters across archetypes. If position
+    carried the same information as archetype, each row would be a single dark cell.</p>
     {ct_chart}
-    {table_view(["Listed position"] + [f"role {l}: {names_by_label[l]}" for l in range(K)],
+    {table_view(["Listed position"] + [f"archetype {l}: {names_by_label[l]}" for l in range(K)],
                 [[p] + [f"{v:.1f}%" for v in rowv] for p, rowv in zip(positions, ctm)],
-                "position to role, row-normalised")}""",
+                "position to archetype, row-normalised")}""",
     "Rows are percentages of that position's player-games.",
 )
 
 # --- 8. Downstream test --------------------------------------------------
 u = usage.sort("mae")
 groups = ["Naive baseline" if m.startswith("baseline") else
-          ("Model with roles" if "roles" in m else "Model without roles")
+          ("Model with archetypes" if "archetypes" in m else "Model without archetypes")
           for m in u["model"].to_list()]
 model_chart = hbar_chart(
     [m.replace("baseline: ", "").replace("lightgbm: ", "LGBM · ").replace("ridge: ", "Ridge · ")
@@ -433,8 +433,8 @@ model_chart = hbar_chart(
     value_label="MAE",
     groups=groups,
     group_colors={"Naive baseline": "var(--series-2)",
-                  "Model without roles": "var(--series-3)",
-                  "Model with roles": "var(--series-1)"},
+                  "Model without archetypes": "var(--series-3)",
+                  "Model with archetypes": "var(--series-1)"},
     dp=5, label_w=310, row_h=25,
 )
 imp_html = ""
@@ -451,7 +451,7 @@ if (ART / "feature_importance.parquet").exists():
          pl.read_parquet(ART / "feature_importance.parquet").iter_rows(named=True)],
         "feature importance, full model")
 section(
-    "8. Do the roles help predict usage?",
+    "8. Do the archetypes help predict usage?",
     f"""<p>The clustering is only worth keeping if it earns its place downstream. Every model is
     trained on games before {M['cutoff']} ({M['panel_train']:,} player-games) and evaluated on
     games after it ({M['panel_test']:,}), never on a random shuffle. The naive baselines come
@@ -460,13 +460,13 @@ section(
     {table_view(["Model", "MAE", "RMSE"],
                 [[r["model"], f"{r['mae']:.5f}", f"{r['rmse']:.5f}"] for r in u.iter_rows(named=True)],
                 "usage model comparison")}
-    <p>The comparison that answers the question is the pair differing only by role
-    information: {base_mae:.5f} without it, {role_mae:.5f} with it &mdash; a
+    <p>The comparison that answers the question is the pair differing only by archetype
+    information: {base_mae:.5f} without it, {archetype_mae:.5f} with it &mdash; a
     <strong>{delta_pct:.2f}%</strong> improvement. That is far too small to call a gain. Every
     model does beat every naive baseline (the best model is {vs_baseline_pct:.1f}% better than
-    the last-20-games mean), but that margin comes from the usage history, not from the roles.</p>
-    <p>Note the row for <em>role features only</em>: with no usage history at all, the role
-    features land within a whisker of the last-20 baseline. The roles do carry real information
+    the last-20-games mean), but that margin comes from the usage history, not from the archetypes.</p>
+    <p>Note the row for <em>archetype features only</em>: with no usage history at all, the archetype
+    features land within a whisker of the last-20 baseline. The archetypes do carry real information
     about how much a player will shoot &mdash; it is simply information his own recent usage
     already encodes.</p>
     {imp_html}""",
@@ -477,15 +477,15 @@ section(
 if (ART / "playtype_summary.parquet").exists():
     pts = pl.read_parquet(ART / "playtype_summary.parquet")
     ptv = pl.read_parquet(ART / "playtype_validation.parquet")
-    ptp = pl.read_parquet(ART / "playtype_role_profiles.parquet")
+    ptp = pl.read_parquet(ART / "playtype_archetype_profiles.parquet")
     pt_targets = [c for c in ptp.columns if c.startswith("pt_share_")]
 
     def g(variant: str, feats: str) -> float:
         r = pts.filter((pl.col("variant") == variant) & (pl.col("features") == feats))
         return float(r["mean_cv_r2"][0]) if r.height else float("nan")
 
-    roles_full, pos_full = g("full season", "roles (soft)"), g("full season", "listed position")
-    roles_early = g("first 20 games", "roles (soft)")
+    archetypes_full, pos_full = g("full season", "archetypes (soft)"), g("full season", "listed position")
+    archetypes_early = g("first 20 games", "archetypes (soft)")
     pos_early = g("first 20 games", "listed position")
 
     per = (ptv.filter(pl.col("variant") == "full season")
@@ -494,52 +494,52 @@ if (ART / "playtype_summary.parquet").exists():
             for r in per.iter_rows(named=True)]
     pt_chart = grouped_hbar(
         cats,
-        {"Roles": [max(r["roles (soft)"], 0.0) for r in per.iter_rows(named=True)],
+        {"Archetypes": [max(r["archetypes (soft)"], 0.0) for r in per.iter_rows(named=True)],
          "Listed position": [max(r["listed position"], 0.0) for r in per.iter_rows(named=True)]},
         label="Cross-validated R-squared predicting play-type share",
         value_label="CV R-squared",
-        colors={"Roles": "var(--series-1)", "Listed position": "var(--series-2)"},
+        colors={"Archetypes": "var(--series-1)", "Listed position": "var(--series-2)"},
         dp=3, label_w=170,
     )
     prof_chart = heatmap(
-        [rl(r["modal_role"]).replace("&middot;", "·") for r in ptp.sort("modal_role").iter_rows(named=True)],
+        [rl(r["modal_archetype"]).replace("&middot;", "·") for r in ptp.sort("modal_archetype").iter_rows(named=True)],
         [c.removeprefix("pt_share_").replace("p_and_r_ball_handler", "P&R handler").replace("_", " ")
          for c in pt_targets],
-        [[r[c] for c in pt_targets] for r in ptp.sort("modal_role").iter_rows(named=True)],
-        label="Play-type mix by role, as z-scores",
+        [[r[c] for c in pt_targets] for r in ptp.sort("modal_archetype").iter_rows(named=True)],
+        label="Play-type mix by archetype, as z-scores",
         diverging=True, value_dp=2, label_w=215, cell=44, vmax=1.6,
     )
     section(
-        "9. The test the roles did not train for",
-        f"""<p>Everything above judges the roles on data related to what built them. This does
+        "9. The test the archetypes did not train for",
+        f"""<p>Everything above judges the archetypes on data related to what built them. This does
         not. <code>statyx.play_types</code> records how each player's offence is actually
         generated &mdash; spot-up, isolation, pick-and-roll handler, cut, hand-off, off-screen,
         transition. None of it entered the features, the fit, or the choice of k. The clustering
         has never seen it.</p>
-        <p>The question is the one that matters for replacing position: <strong>do the roles
+        <p>The question is the one that matters for replacing position: <strong>do the archetypes
         predict that mix better than listed position does?</strong></p>
         <div class="tiles">
-          <div class="tile good"><div class="tile-k">Roles</div><div class="tile-v">{roles_full:.3f}</div>
+          <div class="tile good"><div class="tile-k">Archetypes</div><div class="tile-v">{archetypes_full:.3f}</div>
             <div class="tile-n">mean cross-validated R&sup2; across {per.height} play types</div></div>
           <div class="tile"><div class="tile-k">Listed position</div><div class="tile-v">{pos_full:.3f}</div>
             <div class="tile-n">same folds, same targets</div></div>
-          <div class="tile good"><div class="tile-k">Ratio</div><div class="tile-v">{roles_full / pos_full:.1f}&times;</div>
-            <div class="tile-n">roles over position</div></div>
+          <div class="tile good"><div class="tile-k">Ratio</div><div class="tile-v">{archetypes_full / pos_full:.1f}&times;</div>
+            <div class="tile-n">archetypes over position</div></div>
         </div>
         {pt_chart}
-        {table_view(["Play type", "Roles", "Listed position", "Roles + position"],
-                    [[r["play_type"], f"{r['roles (soft)']:.3f}", f"{r['listed position']:.3f}",
-                      f"{r['roles + position']:.3f}"] for r in per.iter_rows(named=True)],
+        {table_view(["Play type", "Archetypes", "Listed position", "Archetypes + position"],
+                    [[r["play_type"], f"{r['archetypes (soft)']:.3f}", f"{r['listed position']:.3f}",
+                      f"{r['archetypes + position']:.3f}"] for r in per.iter_rows(named=True)],
                     "CV R-squared by play type, full season")}
         <p>Position is not merely weaker &mdash; on spot-ups, isolations and off-screen actions
         its R&sup2; is <em>negative</em>, meaning knowing a player is a "Guard" predicts his
-        spot-up rate worse than guessing the league average. The roles reach
-        {per['roles (soft)'].max():.2f} on pick-and-roll ball handling.</p>
-        <p class="sub">Because <code>play_types</code> is a whole-season aggregate and the role
+        spot-up rate worse than guessing the league average. The archetypes reach
+        {per['archetypes (soft)'].max():.2f} on pick-and-roll ball handling.</p>
+        <p class="sub">Because <code>play_types</code> is a whole-season aggregate and the archetype
         responsibilities average over that same season, the numbers above measure concurrent
-        validity rather than forecasting. Restricting roles to each player's <em>first 20 games</em>
-        removes most of that overlap: roles fall to {roles_early:.3f} and position to
-        {pos_early:.3f}, still a {roles_early / pos_early:.1f}&times; gap. The finding survives.</p>
+        validity rather than forecasting. Restricting archetypes to each player's <em>first 20 games</em>
+        removes most of that overlap: archetypes fall to {archetypes_early:.3f} and position to
+        {pos_early:.3f}, still a {archetypes_early / pos_early:.1f}&times; gap. The finding survives.</p>
         <p>Reading the signatures below confirms it qualitatively: the rim-running centers live
         on cuts, the playmaking guards on pick-and-roll handling, the floor spacers on spot-ups.
         The clustering reconstructed how these players generate offence from nothing but their
@@ -561,15 +561,15 @@ section(
     than I assumed, and the honest number is worth stating: mean assignment confidence is
     {M['mean_confidence']:.3f}, and only <strong>{M['frac_ambiguous'] * 100:.1f}%</strong> of
     player-games have a top responsibility below 0.6. Most player-games land firmly in one
-    role.</p>
+    archetype.</p>
     <p>That weakens the argument for responsibilities over a hard label &mdash; though
     {M['frac_ambiguous'] * 100:.1f}% of {M['design_rows']:,} is still roughly
     {int(M['frac_ambiguous'] * M['design_rows']):,} player-games where an integer id would
     assert something the model does not believe, and those will concentrate in exactly the
     hybrid players position labels already handle worst. The recommendation stands, but on
     narrower grounds than I would have claimed before measuring it: carry the
-    {K} responsibility columns plus <code>role_entropy</code>, and treat
-    <code>role_label</code> as a display convenience.</p>""",
+    {K} responsibility columns plus <code>archetype_entropy</code>, and treat
+    <code>archetype_label</code> as a display convenience.</p>""",
 )
 
 # --- 10. Limits ----------------------------------------------------------
@@ -577,7 +577,7 @@ section(
     "11. Limits, and what I would not yet claim",
     """<ul class="method">
     <li><strong>The features are box-score shaped.</strong> Without tracking data over the full
-      history, "role" here is a shot-and-activity diet. It cannot see screening, gravity, or
+      history, "archetype" here is a shot-and-activity diet. It cannot see screening, gravity, or
       off-ball defensive assignment. <code>statyx.advanced_stats</code> has
       <code>screen_assists</code>, <code>box_outs</code>, <code>contested_shots</code> and
       <code>touches</code>, but only for two seasons.</li>
@@ -586,9 +586,9 @@ section(
       recover the play-type mix they were never shown?</li>
     <li><strong>The 2x duplication in advanced_stats is averaged, not resolved.</strong> 163
       keys genuinely disagree on touches. If the upstream dump can be fixed, fix it there.</li>
-    <li><strong>Minutes are in the feature set.</strong> <code>r_min</code> is rotation role, but
+    <li><strong>Minutes are in the feature set.</strong> <code>r_min</code> is rotation archetype, but
       it also correlates with usage, so part of any downstream gain may be a minutes proxy
-      rather than role. <code>include_volume=False</code> runs the ablation.</li>
+      rather than archetype. <code>include_volume=False</code> runs the ablation.</li>
     <li><strong>One cutoff, not rolling-origin folds.</strong> The split is a single
       train/test boundary. Repeating it across several origins would give error bars.</li>
     </ul>""",
@@ -657,10 +657,10 @@ th{color:var(--text-secondary);font-weight:600;white-space:nowrap}
 td{font-variant-numeric:tabular-nums}
 ul.method{margin:0 0 14px;padding-left:20px}
 ul.method li{margin-bottom:9px}
-.rolegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px}
-.rolecard{border:1px solid var(--border);border-radius:10px;padding:12px 14px}
-.rolename{font-size:13px;font-weight:600;margin-bottom:4px}
-.rolewho{color:var(--text-secondary);font-size:12.5px;line-height:1.5}
+.archetypegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px}
+.archetypecard{border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.archetypename{font-size:13px;font-weight:600;margin-bottom:4px}
+.archetypewho{color:var(--text-secondary);font-size:12.5px;line-height:1.5}
 #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .1s;
 background:var(--text-primary);color:var(--surface-1);font-size:12px;padding:6px 9px;
 border-radius:6px;z-index:9;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -683,14 +683,14 @@ document.addEventListener('mouseout',e=>{if(e.target.closest('.hit'))tip.style.o
 html_doc = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Role Clusters</title>
+<title>Archetype Clusters</title>
 <style>{css}</style></head>
 <body><div id="tip"></div><div class="wrap">
 <header>
-  <h1>Role clusters: a data-driven replacement for listed position</h1>
-  <p class="lede">Listed position describes where a player stood in 1985. This fits roles from
-  what players actually do &mdash; measured only from games already played, so a role is known
-  before tip-off &mdash; and tests whether those roles survive refitting and whether they earn
+  <h1>Archetype clusters: a data-driven replacement for listed position</h1>
+  <p class="lede">Listed position describes where a player stood in 1985. This fits archetypes from
+  what players actually do &mdash; measured only from games already played, so a archetype is known
+  before tip-off &mdash; and tests whether those archetypes survive refitting and whether they earn
   their place in a usage model.</p>
   <p class="meta">{M['design_rows']:,} player-games &middot; {M['players']:,} players &middot;
   {M['date_min']} to {M['date_max']} &middot; fit cutoff {M['cutoff']} &middot;

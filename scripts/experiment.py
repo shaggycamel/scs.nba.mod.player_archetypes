@@ -1,4 +1,4 @@
-"""The full experiment: choose k, test stability, then test whether roles help.
+"""The full experiment: choose k, test stability, then test whether archetypes help.
 
 Writes every result to artifacts/ as parquet/json for the HTML report.
 
@@ -25,7 +25,7 @@ from player_archetypes.data import load
 ART = Path("artifacts")
 ART.mkdir(exist_ok=True)
 
-CUTOFF = date(2024, 10, 1)       # fit roles before this, evaluate after
+CUTOFF = date(2024, 10, 1)       # fit archetypes before this, evaluate after
 FIT_SAMPLE = 120_000             # rows used to fit a mixture (14 dims: ample)
 SEED = 0
 KS = list(range(3, 13))
@@ -42,7 +42,7 @@ log("loading box scores")
 box = load.box_scores()
 pg = features.usage_history(features.per_game(box))
 
-log("building rolling role features (flat 20-game window)")
+log("building rolling archetype features (flat 20-game window)")
 rolled = features.rolling(pg, window=20, min_periods=5)
 X, names = features.design_matrix(rolled)
 log(f"design matrix: {X.height:,} rows x {len(names)} features")
@@ -59,7 +59,7 @@ x_held = scaler.transform(held.select(names).to_numpy())
 
 
 # ---------------------------------------------------------------------------
-# 1. How many roles?
+# 1. How many archetypes?
 # ---------------------------------------------------------------------------
 log("sweeping k")
 rows = []
@@ -100,7 +100,7 @@ log(f"chosen k={K}")
 
 
 # ---------------------------------------------------------------------------
-# 2. Do the roles survive refitting on a different era?
+# 2. Do the archetypes survive refitting on a different era?
 # ---------------------------------------------------------------------------
 log("stability across eras")
 eras = [date(2014, 10, 1), date(2018, 10, 1), date(2021, 10, 1), CUTOFF]
@@ -140,40 +140,40 @@ log(f"seed ARI range {seed_ari['ari'].min():.3f} - {seed_ari['ari'].max():.3f}")
 
 
 # ---------------------------------------------------------------------------
-# 3. Role profiles and the comparison against listed position
+# 3. Archetype profiles and the comparison against listed position
 # ---------------------------------------------------------------------------
-log("fitting final model and profiling roles")
+log("fitting final model and profiling archetypes")
 model = cluster.fit(fit_rows, names, k=K, cutoff=None, seed=SEED)
 assigned = model.assign(X)
 assigned.select(
     "player_id", "player_name", "game_id", "game_date", "season",
-    "role_label", "role_confidence", "role_entropy",
-    *[f"role_{i}" for i in range(K)],
+    "archetype_label", "archetype_confidence", "archetype_entropy",
+    *[f"archetype_{i}" for i in range(K)],
 ).write_parquet(ART / "assignments.parquet")
 
-cluster.profile(assigned, names).write_parquet(ART / "role_profiles.parquet")
+cluster.profile(assigned, names).write_parquet(ART / "archetype_profiles.parquet")
 
 recent = assigned.filter(pl.col("season") == "2025-26")
 exemplars = (
-    recent.group_by("role_label", "player_name")
-    .agg(pl.col("role_confidence").mean().alias("conf"), pl.len().alias("games"))
+    recent.group_by("archetype_label", "player_name")
+    .agg(pl.col("archetype_confidence").mean().alias("conf"), pl.len().alias("games"))
     .filter(pl.col("games") >= 20)
-    .sort(["role_label", "conf"], descending=[False, True])
+    .sort(["archetype_label", "conf"], descending=[False, True])
 )
 exemplars.write_parquet(ART / "exemplars.parquet")
 
 pos = load.listed_positions()
 joined = recent.join(pos, on=["season", "player_id"], how="inner")
-joined.group_by("position", "role_label").agg(pl.len().alias("n")).write_parquet(
+joined.group_by("position", "archetype_label").agg(pl.len().alias("n")).write_parquet(
     ART / "position_crosstab.parquet")
 
 spread = (
-    joined.group_by("position", "role_label").agg(pl.len().alias("n"))
+    joined.group_by("position", "archetype_label").agg(pl.len().alias("n"))
     .with_columns(share=pl.col("n") / pl.col("n").sum().over("position"))
     .group_by("position")
     .agg((-(pl.col("share") * pl.col("share").log()).sum()).alias("entropy"),
          pl.col("n").sum().alias("n"))
-    .with_columns(roles_spanned=pl.col("entropy").exp().round(2))
+    .with_columns(archetypes_spanned=pl.col("entropy").exp().round(2))
     .sort("n", descending=True)
 )
 spread.write_parquet(ART / "position_spread.parquet")
@@ -181,11 +181,11 @@ log(f"position spread:\n{spread}")
 
 
 # ---------------------------------------------------------------------------
-# 4. The test that matters: do roles improve usage prediction?
+# 4. The test that matters: do archetypes improve usage prediction?
 # ---------------------------------------------------------------------------
 log("downstream usage model")
 usage_cols = list(features.USAGE_HISTORY)
-role_cols = [f"role_{i}" for i in range(K)]
+archetype_cols = [f"archetype_{i}" for i in range(K)]
 
 panel = (
     assigned.join(
@@ -218,10 +218,10 @@ score("baseline: season-to-date usage", te["usg_season_to_date"].to_numpy())
 
 feature_sets = {
     "usage history only": usage_cols,
-    "usage history + role features": usage_cols + names,
-    "usage history + soft roles": usage_cols + role_cols,
-    "usage history + role features + soft roles": usage_cols + names + role_cols,
-    "role features only": names,
+    "usage history + archetype features": usage_cols + names,
+    "usage history + soft archetypes": usage_cols + archetype_cols,
+    "usage history + archetype features + soft archetypes": usage_cols + names + archetype_cols,
+    "archetype features only": names,
 }
 try:
     import lightgbm as lgb
@@ -247,7 +247,7 @@ res.write_parquet(ART / "usage_models.parquet")
 
 # Feature importance from the best full model, for the write-up.
 if have_lgb:
-    cols = usage_cols + names + role_cols
+    cols = usage_cols + names + archetype_cols
     gbm = lgb.LGBMRegressor(n_estimators=400, learning_rate=0.05, num_leaves=63,
                             random_state=SEED, verbose=-1).fit(
         tr.select(cols).to_numpy(), y_tr)
@@ -266,8 +266,8 @@ meta = {
     "panel_train": tr.height,
     "panel_test": te.height,
     "box_played_rows": box.height,
-    "mean_confidence": float(assigned["role_confidence"].mean()),
-    "frac_ambiguous": float((assigned["role_confidence"] < 0.6).mean()),
+    "mean_confidence": float(assigned["archetype_confidence"].mean()),
+    "frac_ambiguous": float((assigned["archetype_confidence"] < 0.6).mean()),
 }
 (ART / "meta.json").write_text(json.dumps(meta, indent=2))
 log("done")

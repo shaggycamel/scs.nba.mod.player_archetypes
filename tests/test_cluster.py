@@ -30,21 +30,25 @@ def make_design(players: int = 12, games: int = 25, seed: int = 0):
     return pl.DataFrame(rows), names
 
 
+def test_role_model_alias_preserves_the_old_pickle_path():
+    assert cluster.RoleModel is cluster.ArchetypeModel
+
+
 def test_assign_produces_probabilities():
     design, names = make_design()
     model = cluster.fit(design, names, k=3, seed=0)
     assigned = model.assign(design)
 
-    probs = assigned.select([f"role_{i}" for i in range(3)]).to_numpy()
+    probs = assigned.select([f"archetype_{i}" for i in range(3)]).to_numpy()
     np.testing.assert_allclose(probs.sum(axis=1), 1.0, atol=1e-9)
     assert probs.min() >= 0.0
-    assert assigned["role_label"].min() >= 0
-    assert assigned["role_label"].max() < 3
+    assert assigned["archetype_label"].min() >= 0
+    assert assigned["archetype_label"].max() < 3
     np.testing.assert_allclose(
-        assigned["role_confidence"].to_numpy(), probs.max(axis=1), atol=1e-9
+        assigned["archetype_confidence"].to_numpy(), probs.max(axis=1), atol=1e-9
     )
-    assert assigned["role_entropy"].min() >= -1e-9
-    assert assigned["role_entropy"].max() <= 1.0 + 1e-9
+    assert assigned["archetype_entropy"].min() >= -1e-9
+    assert assigned["archetype_entropy"].max() <= 1.0 + 1e-9
 
 
 def test_cutoff_uses_only_prior_rows():
@@ -69,11 +73,11 @@ def test_fit_rejects_too_few_rows():
         cluster.fit(design, names, k=3, seed=0)
 
 
-def test_profile_returns_one_row_per_role():
+def test_profile_returns_one_row_per_archetype():
     design, names = make_design()
     model = cluster.fit(design, names, k=3, seed=0)
     prof = cluster.profile(model.assign(design), names)
 
     assert prof.height == 3
     assert "n" in prof.columns
-    assert set(prof["role_label"].to_list()) == {0, 1, 2}
+    assert set(prof["archetype_label"].to_list()) == {0, 1, 2}

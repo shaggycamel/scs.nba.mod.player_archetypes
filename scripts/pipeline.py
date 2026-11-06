@@ -1,4 +1,4 @@
-"""Fit or load the archetype model, assign roles, and publish the artifacts.
+"""Fit or load the archetype model, assign archetypes, and publish the artifacts.
 
 This is the scheduled entry point. It reads the live database through scs-hub's
 read-only connection; there is no offline snapshot path.
@@ -11,8 +11,8 @@ Usage:
 Outputs, under ``artifacts/pipeline/`` by default:
 
     model.pkl              fitted scaler/PCA/mixture (written only on a refit)
-    assignments.parquet    one row per player-game with role responsibilities
-    role_profiles.parquet  per-role feature means as z-scores
+    assignments.parquet    one row per player-game with archetype responsibilities
+    archetype_profiles.parquet  per-archetype feature means as z-scores
     run.json               provenance and summary for this run
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ from player_archetypes import cluster, features
 from player_archetypes.data import live, load
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLE_COLUMNS = ("role_label", "role_confidence", "role_entropy")
+ARCHETYPE_COLUMNS = ("archetype_label", "archetype_confidence", "archetype_entropy")
 
 
 def log(message: str) -> None:
@@ -91,7 +91,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="fit on games before this date (implies --refit)",
     )
-    parser.add_argument("--k", type=int, default=10, help="number of roles")
+    parser.add_argument("--k", type=int, default=10, help="number of archetypes")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--window", type=int, default=10, help="trailing games per feature")
     parser.add_argument("--min-periods", type=int, default=5)
@@ -117,14 +117,14 @@ def _atomic_json(payload: dict, path: Path) -> None:
     tmp.replace(path)
 
 
-def _save_model(model: cluster.RoleModel, path: Path) -> None:
+def _save_model(model: cluster.ArchetypeModel, path: Path) -> None:
     tmp = path.with_name(path.name + ".tmp")
     with tmp.open("wb") as handle:
         pickle.dump(model, handle, protocol=pickle.HIGHEST_PROTOCOL)
     tmp.replace(path)
 
 
-def _load_model(path: Path) -> cluster.RoleModel:
+def _load_model(path: Path) -> cluster.ArchetypeModel:
     with path.open("rb") as handle:
         return pickle.load(handle)
 
@@ -286,9 +286,9 @@ def main(argv: list[str] | None = None) -> int:
         fit_rows = getattr(model, "fit_rows", None)
         mode = "assign"
 
-    log("assigning roles")
+    log("assigning archetypes")
     assigned = model.assign(design)
-    role_cols = [f"role_{i}" for i in range(model.gmm.n_components)]
+    archetype_cols = [f"archetype_{i}" for i in range(model.gmm.n_components)]
     keys = [
         column
         for column in (
@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         if column in assigned.columns
     ]
-    published = assigned.select([*keys, *ROLE_COLUMNS, *role_cols, *names])
+    published = assigned.select([*keys, *ARCHETYPE_COLUMNS, *archetype_cols, *names])
     if args.current_season_only:
         seasons = published["season"].drop_nulls()
         if seasons.len() == 0:
@@ -317,15 +317,15 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     assignments_path = out_dir / "assignments.parquet"
-    profiles_path = out_dir / "role_profiles.parquet"
+    profiles_path = out_dir / "archetype_profiles.parquet"
     _atomic_parquet(published, assignments_path)
     _atomic_parquet(cluster.profile(assigned, names), profiles_path)
 
     shares = (
-        published.group_by("role_label")
+        published.group_by("archetype_label")
         .agg(pl.len().alias("n"))
         .with_columns(share=pl.col("n") / published.height)
-        .sort("role_label")
+        .sort("archetype_label")
     )
     meta = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -363,16 +363,16 @@ def main(argv: list[str] | None = None) -> int:
                 if args.current_season_only
                 else None
             ),
-            "mean_confidence": float(published["role_confidence"].mean()),
-            "frac_ambiguous": float((published["role_confidence"] < 0.6).mean()),
+            "mean_confidence": float(published["archetype_confidence"].mean()),
+            "frac_ambiguous": float((published["archetype_confidence"] < 0.6).mean()),
             "cluster_shares": {
-                str(row["role_label"]): round(row["share"], 6)
+                str(row["archetype_label"]): round(row["share"], 6)
                 for row in shares.iter_rows(named=True)
             },
         },
         "outputs": {
             "assignments": str(assignments_path),
-            "role_profiles": str(profiles_path),
+            "archetype_profiles": str(profiles_path),
             "model": str(model_path),
         },
     }

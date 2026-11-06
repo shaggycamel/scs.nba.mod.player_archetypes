@@ -50,7 +50,7 @@ SCHEDULE_SQL = """
 
 
 def read_box_scores(db) -> pl.DataFrame:
-    """Played player-games with only the columns the role features use."""
+    """Played player-games with only the columns the archetype features use."""
     return db.read(BOX_SCORE_SQL)
 
 

@@ -1,18 +1,18 @@
-"""Validate the roles against play-type data they were never shown.
+"""Validate the archetypes against play-type data they were never shown.
 
 This is the test the clustering did not get to train for. `statyx.play_types`
 records how each player's offence is actually generated -- spot-up, iso,
 pick-and-roll handler, roll man, post-up, cut, hand-off, off-screen, transition,
 offensive board. None of it entered the features, the fit, or the k choice.
 
-The question: do the roles predict that mix better than listed position does?
-That is the comparison that matters, because position is the thing the roles are
+The question: do the archetypes predict that mix better than listed position does?
+That is the comparison that matters, because position is the thing the archetypes are
 meant to replace.
 
 Caveat stated plainly in the output: play_types is a whole-season aggregate for
-2025-26 and the role responsibilities average over that same season, so the
+2025-26 and the archetype responsibilities average over that same season, so the
 headline numbers measure concurrent validity, not forecasting. The `early`
-variant restricts roles to each player's first 20 games of the season to show
+variant restricts archetypes to each player's first 20 games of the season to show
 what survives when most of the overlap is removed.
 
 Usage: uv run python -m scripts.validate_playtypes
@@ -46,7 +46,7 @@ def log(m: str) -> None:
 
 meta = json.loads((ART / "meta.json").read_text())
 K = meta["k"]
-role_cols = [f"role_{i}" for i in range(K)]
+archetype_cols = [f"archetype_{i}" for i in range(K)]
 
 MIN_ATTEMPTS = 25   # below this a player's play-type shares are mostly noise
 
@@ -69,19 +69,19 @@ log(f"play-type players with >= {MIN_ATTEMPTS} attempts: {pt.height} of {pt_all.
     f"(median total attempts {pt_all['pt_total_attempts'].median():.0f})")
 
 
-def player_roles(df: pl.DataFrame) -> pl.DataFrame:
+def player_archetypes(df: pl.DataFrame) -> pl.DataFrame:
     return (
         df.group_by("player_id")
-        .agg([pl.col(c).mean().alias(c) for c in role_cols]
+        .agg([pl.col(c).mean().alias(c) for c in archetype_cols]
              + [pl.len().alias("games"),
-                pl.col("role_label").mode().first().alias("modal_role")])
+                pl.col("archetype_label").mode().first().alias("modal_archetype")])
         .filter(pl.col("games") >= 20)
     )
 
 
 variants = {
-    "full season": player_roles(assign),
-    "first 20 games": player_roles(
+    "full season": player_archetypes(assign),
+    "first 20 games": player_archetypes(
         assign.sort(["player_id", "game_date"])
         .with_columns(n=pl.col("game_id").cum_count().over("player_id"))
         .filter(pl.col("n") <= 20)
@@ -89,9 +89,9 @@ variants = {
 }
 
 rows, prof_rows = [], []
-for vname, roles in variants.items():
+for vname, archetypes in variants.items():
     panel = (
-        roles.join(pt, on="player_id", how="inner")
+        archetypes.join(pt, on="player_id", how="inner")
         .join(pos.select("player_id", "position"), on="player_id", how="left")
         .drop_nulls(TARGETS)
     )
@@ -102,10 +102,10 @@ for vname, roles in variants.items():
 
     pos_dummies = panel.select("position").to_dummies(drop_first=True)
     blocks = {
-        "roles (soft)": panel.select(role_cols).to_numpy(),
+        "archetypes (soft)": panel.select(archetype_cols).to_numpy(),
         "listed position": pos_dummies.to_numpy().astype(float),
-        "roles + position": np.hstack(
-            [panel.select(role_cols).to_numpy(), pos_dummies.to_numpy().astype(float)]
+        "archetypes + position": np.hstack(
+            [panel.select(archetype_cols).to_numpy(), pos_dummies.to_numpy().astype(float)]
         ),
     }
     cv = KFold(n_splits=5, shuffle=True, random_state=SEED)
@@ -125,14 +125,14 @@ for vname, roles in variants.items():
         log(f"  {bname:18s} mean CV R2 = {np.nanmean(r2s):.4f}")
 
     if vname == "full season":
-        # Per-role play-type signature, for the report heatmap.
+        # Per-archetype play-type signature, for the report heatmap.
         mu = panel.select(TARGETS).mean().to_numpy()[0]
         sd = panel.select(TARGETS).std().to_numpy()[0]
-        g = (panel.group_by("modal_role")
+        g = (panel.group_by("modal_archetype")
              .agg([pl.col(t).mean().alias(t) for t in TARGETS] + [pl.len().alias("n")])
-             .sort("modal_role"))
+             .sort("modal_archetype"))
         for r in g.iter_rows(named=True):
-            out = {"modal_role": r["modal_role"], "n": r["n"]}
+            out = {"modal_archetype": r["modal_archetype"], "n": r["n"]}
             for i, t in enumerate(TARGETS):
                 out[t] = (r[t] - mu[i]) / sd[i] if sd[i] else 0.0
             prof_rows.append(out)
@@ -140,7 +140,7 @@ for vname, roles in variants.items():
 res = pl.DataFrame(rows)
 res.write_parquet(ART / "playtype_validation.parquet")
 if prof_rows:
-    pl.DataFrame(prof_rows).write_parquet(ART / "playtype_role_profiles.parquet")
+    pl.DataFrame(prof_rows).write_parquet(ART / "playtype_archetype_profiles.parquet")
 
 log("\n=== mean CV R-squared by feature block ===")
 summary = (res.with_columns(

@@ -1,4 +1,4 @@
-"""Soft role clustering.
+"""Soft archetype clustering.
 
 The representation is deliberately soft. A hard cluster id is just `position`
 with more categories -- it reimposes the discreteness that makes listed
@@ -26,8 +26,8 @@ from sklearn.preprocessing import StandardScaler
 
 
 @dataclass
-class RoleModel:
-    """A fitted role model plus the preprocessing it needs at apply time."""
+class ArchetypeModel:
+    """A fitted archetype model plus the preprocessing it needs at apply time."""
 
     scaler: StandardScaler
     pca: PCA | None
@@ -46,10 +46,10 @@ class RoleModel:
         return self.pca.transform(x) if self.pca is not None else x
 
     def responsibilities(self, df: pl.DataFrame) -> np.ndarray:
-        """Soft assignment: one row per input, one column per role."""
+        """Soft assignment: one row per input, one column per archetype."""
         return self.gmm.predict_proba(self._matrix(df))
 
-    def assign(self, df: pl.DataFrame, prefix: str = "role") -> pl.DataFrame:
+    def assign(self, df: pl.DataFrame, prefix: str = "archetype") -> pl.DataFrame:
         """Attach soft responsibilities, the argmax label and its confidence."""
         resp = self.responsibilities(df)
         k = resp.shape[1]
@@ -58,13 +58,18 @@ class RoleModel:
             + [
                 pl.Series(f"{prefix}_label", resp.argmax(axis=1)).cast(pl.Int32),
                 pl.Series(f"{prefix}_confidence", resp.max(axis=1)),
-                # Normalised entropy: 0 = pure role, 1 = evenly split across roles.
+                # Normalised entropy: 0 = pure archetype, 1 = evenly split.
                 pl.Series(
                     f"{prefix}_entropy",
                     -(resp * np.log(resp + 1e-12)).sum(axis=1) / np.log(k),
                 ),
             ]
         )
+
+
+# The frozen seasonal model was pickled under the old class name. Keep the
+# alias so `pickle.load()` can still resolve player_archetypes.cluster.RoleModel.
+RoleModel = ArchetypeModel
 
 
 def fit(
@@ -79,8 +84,8 @@ def fit(
     min_periods: int | None = None,
     min_prior_games: int | None = None,
     season_type: str | None = None,
-) -> RoleModel:
-    """Fit a k-role mixture on rows strictly before `cutoff`."""
+) -> ArchetypeModel:
+    """Fit a k-archetype mixture on rows strictly before `cutoff`."""
     train = df.filter(pl.col("game_date") < cutoff) if cutoff is not None else df
     if train.height < k * 50:
         raise ValueError(f"only {train.height} training rows for k={k}")
@@ -98,7 +103,7 @@ def fit(
         n_init=4,
         max_iter=500,
     ).fit(x)
-    return RoleModel(
+    return ArchetypeModel(
         scaler=scaler,
         pca=pca,
         gmm=gmm,
@@ -153,12 +158,12 @@ def stability(
     cutoffs: list[date],
     seed: int = 0,
 ) -> pl.DataFrame:
-    """Do the roles survive refitting on a different era?
+    """Do the archetypes survive refitting on a different era?
 
     Each model is fitted on a different time window, then all of them label the
-    same reference rows. Adjusted Rand Index compares those labellings. A role
-    taxonomy that reshuffles whenever you move the cutoff is not describing the
-    game, and is useless as a replacement for position.
+    same reference rows. Adjusted Rand Index compares those labellings. An
+    archetype taxonomy that reshuffles whenever you move the cutoff is not
+    describing the game, and is useless as a replacement for position.
     """
     ref = df.filter(pl.col("game_date") >= max(cutoffs))
     labels = {}
@@ -178,8 +183,12 @@ def stability(
     return pl.DataFrame(rows)
 
 
-def profile(assigned: pl.DataFrame, names: list[str], prefix: str = "role") -> pl.DataFrame:
-    """Per-cluster feature means as z-scores, for naming the roles."""
+def profile(
+    assigned: pl.DataFrame,
+    names: list[str],
+    prefix: str = "archetype",
+) -> pl.DataFrame:
+    """Per-cluster feature means as z-scores, for naming the archetypes."""
     mu = assigned.select(names).mean().to_numpy()[0]
     sd = assigned.select(names).std().to_numpy()[0]
     out = (

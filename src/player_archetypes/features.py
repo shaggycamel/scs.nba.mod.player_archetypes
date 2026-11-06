@@ -1,8 +1,8 @@
-"""Role features: what a player does, measured from prior games only.
+"""Archetype features: what a player does, measured from prior games only.
 
 Design rules, all of them deliberate:
 
-* Rate, not volume. Role is a *mix* of activities, so counting stats are
+* Rate, not volume. Archetype is a *mix* of activities, so counting stats are
   normalised per minute and shot types are expressed as shares of the player's
   own attempts. Two players with the same shot diet belong together whether
   they play 12 minutes or 36.
@@ -34,7 +34,7 @@ RATE_FEATURES: tuple[str, ...] = (
     "stl_per_min",
     "blk_per_min",     # rim protection
     "pf_per_min",
-    "start_rate",      # rotation role
+    "start_rate",      # rotation archetype
 )
 
 EFFICIENCY_FEATURES: tuple[str, ...] = ("fg_pct", "fg3_pct", "ft_pct", "ts_pct", "efg_pct")
@@ -43,7 +43,7 @@ VOLUME_FEATURES: tuple[str, ...] = ("min",)
 
 
 def per_game(box: pl.DataFrame) -> pl.DataFrame:
-    """Derive single-game role rates from a played-only box score frame."""
+    """Derive single-game archetype rates from a played-only box score frame."""
     safe_min = pl.when(pl.col("min") > 0).then(pl.col("min")).otherwise(None)
     safe_fga = pl.when(pl.col("fga") > 0).then(pl.col("fga")).otherwise(None)
     return box.with_columns(
@@ -73,7 +73,7 @@ def rolling(
     prior games come back null and are dropped by the caller.
 
     `half_life` switches from a flat mean to an exponentially weighted mean,
-    which tracks a mid-season role change faster.
+    which tracks a mid-season archetype change faster.
     """
     cols = list(RATE_FEATURES)
     if include_efficiency:
@@ -136,7 +136,7 @@ def design_matrix(
 
 # ---------------------------------------------------------------------------
 # Usage history. These are baselines for the downstream model and legitimate
-# inputs to it, but they must never enter the clustering features: a role is
+# inputs to it, but they must never enter the clustering features: a archetype is
 # what a player does, and usage is the thing we are trying to predict.
 # ---------------------------------------------------------------------------
 

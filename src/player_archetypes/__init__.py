@@ -1,8 +1,8 @@
-"""Point-in-time role archetypes for basketball player-games.
+"""Point-in-time player archetypes for basketball player-games.
 
 The model replaces listed position with a soft, data-driven representation of
 what a player actually does on the floor. Every assignment is fitted only on
-games before a cutoff, so a role is knowable before tip-off.
+games before a cutoff, so an archetype is knowable before tip-off.
 
     from player_archetypes import fit
     model = fit(design, feature_names, k=10, cutoff=date(2024, 10, 1))
@@ -14,6 +14,6 @@ model can be used without the source snapshot.
 """
 
 from player_archetypes import cluster, features
-from player_archetypes.cluster import RoleModel, fit
+from player_archetypes.cluster import ArchetypeModel, RoleModel, fit
 
-__all__ = ["RoleModel", "cluster", "features", "fit"]
+__all__ = ["ArchetypeModel", "RoleModel", "cluster", "features", "fit"]

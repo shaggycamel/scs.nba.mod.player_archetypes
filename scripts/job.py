@@ -134,9 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     row_count = None
     if db is not None and error is None:
         try:
-            row_count = db.read("SELECT count(*) AS n FROM mod.player_role")[0, "n"]
+            row_count = db.read("SELECT count(*) AS n FROM mod.player_archetype")[0, "n"]
         except Exception as exc:  # noqa: BLE001 - still write the run status
-            print(f"warning: could not count mod.player_role: {exc}", flush=True)
+            print(f"warning: could not count mod.player_archetype: {exc}", flush=True)
 
     if result_file is not None:
         payload = {"row_count": row_count}
@@ -170,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     if row_count is None:
         log("completed; row count unavailable")
     else:
-        log(f"completed; mod.player_role has {row_count:,} rows")
+        log(f"completed; mod.player_archetype has {row_count:,} rows")
     return 0
 
 
