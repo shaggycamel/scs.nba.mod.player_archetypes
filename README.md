@@ -127,12 +127,22 @@ assigned = model.assign(design)
 
 ## Scheduled pipeline
 
-The weekly production entry point is `scripts.job`. It reads live, loads the
-frozen seasonal model, assigns the current season, publishes, and writes a
-status row to `util.update_log`:
+The scheduled entry point is the repository-root `__main__.py`, run by
+`nba/mod/_runner` on the NUC:
 
 ```bash
 uv sync --group data
+uv run --frozen --group data python __main__.py
+```
+
+`__main__.py` calls `scripts.job`. It reads live, loads the frozen seasonal
+model, assigns the current season, and publishes. When `SCS_RESULT_FILE` is set
+(the runner path), it writes `{"row_count": n}` there and lets the runner own
+`util.update_log`; standalone runs keep the old status-row behavior.
+
+For a manual standalone run:
+
+```bash
 uv run --group data python -m scripts.job --cadence weekly
 ```
 

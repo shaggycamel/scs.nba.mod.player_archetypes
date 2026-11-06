@@ -3,6 +3,9 @@
 Status: 2026-11-04. The model, live pipeline and Cockroach output are working.
 The scheduler and operational safeguards are what remain.
 
+> Scheduling update: the weekly job now runs through `nba/mod/_runner` using
+> `util.update_schedule.job_family = 'model'`. See `SCHEDULING.md`.
+
 ## Done
 
 - Frozen production model: regular season only, 10-game rolling window,
