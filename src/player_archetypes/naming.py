@@ -29,7 +29,11 @@ def name_archetype(row: Mapping[str, float]) -> str:
         return "Primary creator"
     if ast > 1.0:
         return "Playmaking guard"
-    if oreb > 0.4 and blk > 0.4 and ast < -0.5:
+    if astr > 0.8 and ast > 0.6 and mins < 0.0:
+        return "Bench playmaker"
+    if astr > 0.8 and ast > 0.6:
+        return "Secondary creator"
+    if oreb > 0.4 and blk > 0.4:
         return "Interior finisher"
     if mins < -1.0:
         return "Deep reserve"

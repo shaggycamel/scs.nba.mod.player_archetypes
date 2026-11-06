@@ -25,6 +25,35 @@ def test_name_archetype_uses_the_signature_thresholds():
         )
         == "Primary creator"
     )
+    assert (
+        name_archetype(
+            {
+                "r_oreb_pct": 0.6,
+                "r_blk_per_min": 0.9,
+            }
+        )
+        == "Interior finisher"
+    )
+    assert (
+        name_archetype(
+            {
+                "r_ast_pct": 0.8,
+                "r_ast_ratio": 0.9,
+                "r_min": -0.1,
+            }
+        )
+        == "Bench playmaker"
+    )
+    assert (
+        name_archetype(
+            {
+                "r_ast_pct": 0.8,
+                "r_ast_ratio": 0.9,
+                "r_min": 0.5,
+            }
+        )
+        == "Secondary creator"
+    )
     assert name_archetype({}) == "Connective wing"
 
 
