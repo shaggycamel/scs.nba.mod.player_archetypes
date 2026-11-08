@@ -62,9 +62,7 @@ def describe_archetypes(profiles: pl.DataFrame) -> pl.DataFrame:
         used[base] = used.get(base, 0) + 1
         descriptions.append(base if used[base] == 1 else f"{base} {used[base]}")
 
-    result = profiles.with_columns(
-        pl.Series("archetype_description", descriptions)
-    )
+    result = profiles.with_columns(pl.Series("archetype_description", descriptions))
     if "archetype_label" in result.columns:
         columns = ["archetype_label", "archetype_description"] + [
             column

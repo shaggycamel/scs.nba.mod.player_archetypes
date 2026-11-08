@@ -17,6 +17,7 @@ what survives when most of the overlap is removed.
 
 Usage: uv run python -m scripts.validate_playtypes
 """
+
 from __future__ import annotations
 
 import json
@@ -34,8 +35,16 @@ ART = Path("artifacts")
 SEED = 0
 SEASON = "2025-26"
 KINDS = [
-    "spot_up", "iso", "transition", "p_and_r_ball_handler", "p_and_r_roll_man",
-    "cut", "hand_off", "off_screen", "post_up", "o_board",
+    "spot_up",
+    "iso",
+    "transition",
+    "p_and_r_ball_handler",
+    "p_and_r_roll_man",
+    "cut",
+    "hand_off",
+    "off_screen",
+    "post_up",
+    "o_board",
 ]
 TARGETS = [f"pt_share_{k}" for k in KINDS]
 
@@ -48,7 +57,7 @@ meta = json.loads((ART / "meta.json").read_text())
 K = meta["k"]
 archetype_cols = [f"archetype_{i}" for i in range(K)]
 
-MIN_ATTEMPTS = 25   # below this a player's play-type shares are mostly noise
+MIN_ATTEMPTS = 25  # below this a player's play-type shares are mostly noise
 
 assign = pl.read_parquet(ART / "assignments.parquet").filter(pl.col("season") == SEASON)
 pt_all = load.play_types().filter(pl.col("season") == SEASON)
@@ -60,21 +69,29 @@ log(f"assignments(2025-26)={assign.height:,}  play_types={pt_all.height}  positi
 # upstream, not a fact about the season. Drop them rather than score NaNs.
 dead = [t for t in TARGETS if pt_all[t].std() == 0]
 if dead:
-    log(f"dropping all-zero play types (upstream gap): "
-        f"{', '.join(d.removeprefix('pt_share_') for d in dead)}")
+    log(
+        f"dropping all-zero play types (upstream gap): "
+        f"{', '.join(d.removeprefix('pt_share_') for d in dead)}"
+    )
 TARGETS = [t for t in TARGETS if t not in dead]
 
 pt = pt_all.filter(pl.col("pt_total_attempts") >= MIN_ATTEMPTS)
-log(f"play-type players with >= {MIN_ATTEMPTS} attempts: {pt.height} of {pt_all.height} "
-    f"(median total attempts {pt_all['pt_total_attempts'].median():.0f})")
+log(
+    f"play-type players with >= {MIN_ATTEMPTS} attempts: {pt.height} of {pt_all.height} "
+    f"(median total attempts {pt_all['pt_total_attempts'].median():.0f})"
+)
 
 
 def player_archetypes(df: pl.DataFrame) -> pl.DataFrame:
     return (
         df.group_by("player_id")
-        .agg([pl.col(c).mean().alias(c) for c in archetype_cols]
-             + [pl.len().alias("games"),
-                pl.col("archetype_label").mode().first().alias("modal_archetype")])
+        .agg(
+            [pl.col(c).mean().alias(c) for c in archetype_cols]
+            + [
+                pl.len().alias("games"),
+                pl.col("archetype_label").mode().first().alias("modal_archetype"),
+            ]
+        )
         .filter(pl.col("games") >= 20)
     )
 
@@ -114,23 +131,30 @@ for vname, archetypes in variants.items():
         r2s = []
         for t in TARGETS:
             y = panel[t].to_numpy()
-            pred = cross_val_predict(
-                RidgeCV(alphas=np.logspace(-2, 3, 20)), Xs, y, cv=cv)
+            pred = cross_val_predict(RidgeCV(alphas=np.logspace(-2, 3, 20)), Xs, y, cv=cv)
             ss_res = float(((y - pred) ** 2).sum())
             ss_tot = float(((y - y.mean()) ** 2).sum())
             r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
             r2s.append(r2)
-            rows.append({"variant": vname, "features": bname,
-                         "play_type": t.removeprefix("pt_share_"), "cv_r2": r2})
+            rows.append(
+                {
+                    "variant": vname,
+                    "features": bname,
+                    "play_type": t.removeprefix("pt_share_"),
+                    "cv_r2": r2,
+                }
+            )
         log(f"  {bname:18s} mean CV R2 = {np.nanmean(r2s):.4f}")
 
     if vname == "full season":
         # Per-archetype play-type signature, for the report heatmap.
         mu = panel.select(TARGETS).mean().to_numpy()[0]
         sd = panel.select(TARGETS).std().to_numpy()[0]
-        g = (panel.group_by("modal_archetype")
-             .agg([pl.col(t).mean().alias(t) for t in TARGETS] + [pl.len().alias("n")])
-             .sort("modal_archetype"))
+        g = (
+            panel.group_by("modal_archetype")
+            .agg([pl.col(t).mean().alias(t) for t in TARGETS] + [pl.len().alias("n")])
+            .sort("modal_archetype")
+        )
         for r in g.iter_rows(named=True):
             out = {"modal_archetype": r["modal_archetype"], "n": r["n"]}
             for i, t in enumerate(TARGETS):
@@ -143,17 +167,21 @@ if prof_rows:
     pl.DataFrame(prof_rows).write_parquet(ART / "playtype_archetype_profiles.parquet")
 
 log("\n=== mean CV R-squared by feature block ===")
-summary = (res.with_columns(
-               pl.when(pl.col("cv_r2").is_nan()).then(None).otherwise(pl.col("cv_r2")).alias("cv_r2"))
-           .group_by("variant", "features")
-           .agg(pl.col("cv_r2").mean().alias("mean_cv_r2"),
-                pl.col("cv_r2").count().alias("n_play_types"))
-           .sort(["variant", "mean_cv_r2"], descending=[False, True]))
+summary = (
+    res.with_columns(
+        pl.when(pl.col("cv_r2").is_nan()).then(None).otherwise(pl.col("cv_r2")).alias("cv_r2")
+    )
+    .group_by("variant", "features")
+    .agg(pl.col("cv_r2").mean().alias("mean_cv_r2"), pl.col("cv_r2").count().alias("n_play_types"))
+    .sort(["variant", "mean_cv_r2"], descending=[False, True])
+)
 print(summary)
 summary.write_parquet(ART / "playtype_summary.parquet")
 
 log("\n=== per play type, full season ===")
 with pl.Config(tbl_rows=40, tbl_width_chars=150):
-    print(res.filter(pl.col("variant") == "full season")
-          .pivot(on="features", index="play_type", values="cv_r2")
-          .with_columns(pl.exclude("play_type").round(3)))
+    print(
+        res.filter(pl.col("variant") == "full season")
+        .pivot(on="features", index="play_type", values="cv_r2")
+        .with_columns(pl.exclude("play_type").round(3))
+    )

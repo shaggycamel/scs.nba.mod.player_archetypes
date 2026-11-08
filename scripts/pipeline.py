@@ -15,6 +15,7 @@ Outputs, under ``artifacts/pipeline/`` by default:
     archetype_profiles.parquet  per-archetype feature means as z-scores
     run.json               provenance and summary for this run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -209,17 +210,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.regular_season_only:
         before = box.height
         box = regular_season_only(box, True)
-        log(
-            f"regular season only: {box.height:,} of {before:,} "
-            f"played player-games retained"
-        )
+        log(f"regular season only: {box.height:,} of {before:,} played player-games retained")
     season_type = "Regular Season" if args.regular_season_only else None
 
     pg = features.usage_history(features.per_game(box))
     rolled = features.rolling(pg, window=args.window, min_periods=args.min_periods)
-    design, names = features.design_matrix(
-        rolled, min_prior_games=args.min_prior_games
-    )
+    design, names = features.design_matrix(rolled, min_prior_games=args.min_prior_games)
     if design.height == 0:
         print("error: the design matrix is empty after the prior-games filter", flush=True)
         return 2
@@ -271,15 +267,13 @@ def main(argv: list[str] | None = None) -> int:
             "season_type": season_type,
         }
         mismatches = [
-            f"  {key}: model {getattr(model, key, None)!r}, "
-            f"runtime {value!r}"
+            f"  {key}: model {getattr(model, key, None)!r}, runtime {value!r}"
             for key, value in expected.items()
             if getattr(model, key, None) != value
         ]
         if mismatches:
             print(
-                "error: saved model was built with different settings\n"
-                + "\n".join(mismatches),
+                "error: saved model was built with different settings\n" + "\n".join(mismatches),
                 flush=True,
             )
             return 2
@@ -359,11 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "assignments": {
             "rows": published.height,
-            "season": (
-                str(published["season"].max())
-                if args.current_season_only
-                else None
-            ),
+            "season": (str(published["season"].max()) if args.current_season_only else None),
             "mean_confidence": float(published["archetype_confidence"].mean()),
             "frac_ambiguous": float((published["archetype_confidence"] < 0.6).mean()),
             "cluster_shares": {

@@ -67,9 +67,7 @@ def nba_schedule_from_frame(schedule: pl.DataFrame) -> pl.DataFrame:
 
 def nba_schedule(data: Path = DATA) -> pl.DataFrame:
     """One row per nba game from the Parquet snapshot."""
-    return nba_schedule_from_frame(
-        pl.read_parquet(data / "nba" / "league_game_schedule.parquet")
-    )
+    return nba_schedule_from_frame(pl.read_parquet(data / "nba" / "league_game_schedule.parquet"))
 
 
 def game_map(data: Path = DATA) -> pl.DataFrame:
@@ -81,9 +79,7 @@ def game_map(data: Path = DATA) -> pl.DataFrame:
         pl.col("visitor_team_abbr").alias("away_abbr"),
     )
     return (
-        statyx.join(
-            nba_schedule(data), on=["game_date", "home_abbr", "away_abbr"], how="inner"
-        )
+        statyx.join(nba_schedule(data), on=["game_date", "home_abbr", "away_abbr"], how="inner")
         .select("sx_game_id", "nba_game_id", "game_date", "season", "season_type")
         .unique(subset=["sx_game_id"])
     )

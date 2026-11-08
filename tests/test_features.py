@@ -55,9 +55,7 @@ def test_rolling_features_never_see_the_current_game():
     )
     after = features.rolling(changed, window=4, min_periods=2)
 
-    at_game = lambda frame, game: frame.filter(pl.col("game_id") == game)[
-        "r_fga_per_min"
-    ].item()
+    at_game = lambda frame, game: frame.filter(pl.col("game_id") == game)["r_fga_per_min"].item()
     assert at_game(before, 5) == pytest.approx(at_game(after, 5))
     assert at_game(before, 6) != pytest.approx(at_game(after, 6))
 
@@ -75,9 +73,7 @@ def test_usage_history_never_sees_the_current_game():
     )
     after = features.usage_history(changed)
 
-    at_game = lambda frame, game: frame.filter(pl.col("game_id") == game)[
-        "usg_last5"
-    ].item()
+    at_game = lambda frame, game: frame.filter(pl.col("game_id") == game)["usg_last5"].item()
     assert at_game(before, 5) == pytest.approx(at_game(after, 5))
     assert at_game(before, 6) != pytest.approx(at_game(after, 6))
 

@@ -80,11 +80,7 @@ def advanced_stats(data: Path = DATA) -> pl.DataFrame:
     """
     raw = pl.read_parquet(data / "statyx" / "advanced_stats.parquet")
     key = ["player_id", "game_id"]
-    numeric = [
-        c
-        for c, dt in raw.schema.items()
-        if dt.is_numeric() and c not in (*key, "period")
-    ]
+    numeric = [c for c, dt in raw.schema.items() if dt.is_numeric() and c not in (*key, "period")]
     deduped = raw.group_by(key).agg([pl.col(c).mean().alias(c) for c in numeric])
 
     pmap = player_map(data).select("statyx_id", "nba_id")
@@ -123,9 +119,7 @@ def play_types(data: Path = DATA) -> pl.DataFrame:
         raw.with_columns(pt_total_attempts=total)
         .with_columns(
             [
-                (pl.col(f"{k}_attempts") / pl.col("pt_total_attempts")).alias(
-                    f"pt_share_{k}"
-                )
+                (pl.col(f"{k}_attempts") / pl.col("pt_total_attempts")).alias(f"pt_share_{k}")
                 for k in kinds
             ]
         )

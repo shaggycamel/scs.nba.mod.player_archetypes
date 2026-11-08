@@ -4,6 +4,7 @@ Marks are thin, grids are hairlines, fills carry 4px rounded data-ends anchored
 to the baseline, and every chart ships a hover tooltip plus a table view. Colors
 are referenced as CSS custom properties so light/dark swap in one place.
 """
+
 from __future__ import annotations
 
 import html
@@ -59,9 +60,7 @@ def _yticks(lo: float, hi: float, n: int = 5) -> list[float]:
 
 def table_view(headers: list[str], rows: list[list[object]], caption: str) -> str:
     th = "".join(f"<th>{esc(h)}</th>" for h in headers)
-    tr = "".join(
-        "<tr>" + "".join(f"<td>{esc(c)}</td>" for c in row) + "</tr>" for row in rows
-    )
+    tr = "".join("<tr>" + "".join(f"<td>{esc(c)}</td>" for c in row) + "</tr>" for row in rows)
     return (
         f'<details class="tableview"><summary>Table view &mdash; {esc(caption)}</summary>'
         f'<div class="scroll"><table><thead><tr>{th}</tr></thead>'
@@ -97,29 +96,45 @@ def line_chart(
     out = [_open(box, label)]
     for t in _yticks(lo, hi):
         y = py(t)
-        out.append(f'<line x1="{box.l}" y1="{y:.1f}" x2="{box.l + box.iw}" y2="{y:.1f}" stroke="{GRID}" stroke-width="1"/>')
-        out.append(f'<text x="{box.l - 10}" y="{y + 4:.1f}" class="tick" text-anchor="end">{fmt(t, y_dp)}</text>')
-    out.append(f'<line x1="{box.l}" y1="{box.t + box.ih}" x2="{box.l + box.iw}" y2="{box.t + box.ih}" stroke="{AXIS}" stroke-width="1"/>')
+        out.append(
+            f'<line x1="{box.l}" y1="{y:.1f}" x2="{box.l + box.iw}" y2="{y:.1f}" stroke="{GRID}" stroke-width="1"/>'
+        )
+        out.append(
+            f'<text x="{box.l - 10}" y="{y + 4:.1f}" class="tick" text-anchor="end">{fmt(t, y_dp)}</text>'
+        )
+    out.append(
+        f'<line x1="{box.l}" y1="{box.t + box.ih}" x2="{box.l + box.iw}" y2="{box.t + box.ih}" stroke="{AXIS}" stroke-width="1"/>'
+    )
     for x in xs:
-        out.append(f'<text x="{px(x):.1f}" y="{box.t + box.ih + 20}" class="tick" text-anchor="middle">{int(x)}</text>')
+        out.append(
+            f'<text x="{px(x):.1f}" y="{box.t + box.ih + 20}" class="tick" text-anchor="middle">{int(x)}</text>'
+        )
 
     if highlight is not None:
         hx = px(highlight)
-        out.append(f'<line x1="{hx:.1f}" y1="{box.t}" x2="{hx:.1f}" y2="{box.t + box.ih}" stroke="var(--series-2)" stroke-width="2"/>')
+        out.append(
+            f'<line x1="{hx:.1f}" y1="{box.t}" x2="{hx:.1f}" y2="{box.t + box.ih}" stroke="var(--series-2)" stroke-width="2"/>'
+        )
         if highlight_note:
             anchor = "end" if hx > box.l + box.iw * 0.6 else "start"
             dx = -8 if anchor == "end" else 8
-            out.append(f'<text x="{hx + dx:.1f}" y="{box.t + 14}" class="annot" text-anchor="{anchor}">{esc(highlight_note)}</text>')
+            out.append(
+                f'<text x="{hx + dx:.1f}" y="{box.t + 14}" class="annot" text-anchor="{anchor}">{esc(highlight_note)}</text>'
+            )
 
     pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in zip(xs, ys))
-    out.append(f'<polyline points="{pts}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>')
+    out.append(
+        f'<polyline points="{pts}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>'
+    )
     for x, y in zip(xs, ys):
         out.append(
             f'<circle cx="{px(x):.1f}" cy="{py(y):.1f}" r="4.5" fill="var(--series-1)" '
             f'stroke="var(--surface-1)" stroke-width="2" class="hit" '
             f'data-tip="{esc(x_label)} {int(x)} &middot; {esc(y_label)} {fmt(y, 4)}"><title>{esc(x_label)} {int(x)}: {fmt(y, 4)}</title></circle>'
         )
-    out.append(f'<text x="{box.l + box.iw / 2:.0f}" y="{box.h - 6}" class="axislabel" text-anchor="middle">{esc(x_label)}</text>')
+    out.append(
+        f'<text x="{box.l + box.iw / 2:.0f}" y="{box.h - 6}" class="axislabel" text-anchor="middle">{esc(x_label)}</text>'
+    )
     out.append("</svg>")
     return "".join(out)
 
@@ -148,14 +163,20 @@ def hbar_chart(
         if groups and group_colors:
             colour = group_colors.get(groups[i], colour)
         bw = max(val / vmax * box.iw, 1.5)
-        out.append(f'<text x="{box.l - 10}" y="{y + row_h / 2 + 4:.1f}" class="catlabel" text-anchor="end">{esc(lab)}</text>')
+        out.append(
+            f'<text x="{box.l - 10}" y="{y + row_h / 2 + 4:.1f}" class="catlabel" text-anchor="end">{esc(lab)}</text>'
+        )
         out.append(
             f'<rect x="{box.l}" y="{y + 4:.1f}" width="{bw:.1f}" height="{row_h - 10}" rx="4" ry="4" '
             f'fill="{colour}" class="hit" data-tip="{esc(lab)} &middot; {esc(value_label)} {fmt(val, dp)}">'
-            f'<title>{esc(lab)}: {fmt(val, dp)}</title></rect>'
+            f"<title>{esc(lab)}: {fmt(val, dp)}</title></rect>"
         )
-        out.append(f'<text x="{box.l + bw + 8:.1f}" y="{y + row_h / 2 + 4:.1f}" class="vallabel">{fmt(val, dp)}</text>')
-    out.append(f'<line x1="{box.l}" y1="{box.t}" x2="{box.l}" y2="{box.t + len(labels) * row_h}" stroke="{AXIS}" stroke-width="1"/>')
+        out.append(
+            f'<text x="{box.l + bw + 8:.1f}" y="{y + row_h / 2 + 4:.1f}" class="vallabel">{fmt(val, dp)}</text>'
+        )
+    out.append(
+        f'<line x1="{box.l}" y1="{box.t}" x2="{box.l}" y2="{box.t + len(labels) * row_h}" stroke="{AXIS}" stroke-width="1"/>'
+    )
     out.append("</svg>")
     legend = ""
     if groups and group_colors:
@@ -241,14 +262,14 @@ def heatmap(
                 f'rx="3" ry="3" fill="{colour(v)}" class="hit" '
                 f'data-tip="{esc(rlab)} &middot; {esc(col_labels[j])} &middot; '
                 f'{fmt(v, value_dp)}{esc(unit)}">'
-                f'<title>{esc(rlab)} / {esc(col_labels[j])}: {fmt(v, value_dp)}{esc(unit)}</title></rect>'
+                f"<title>{esc(rlab)} / {esc(col_labels[j])}: {fmt(v, value_dp)}{esc(unit)}</title></rect>"
             )
             strong = abs(v) >= 0.72 * vmax if diverging else v >= 0.62 * smax
             if strong:
                 out.append(
                     f'<text x="{x + cell / 2:.1f}" y="{y + cell / 2 + 4:.1f}" '
                     f'class="cellval" text-anchor="middle">'
-                    f'{fmt(v, cell_dp)}</text>'
+                    f"{fmt(v, cell_dp)}</text>"
                 )
 
     steps = 9
@@ -267,7 +288,7 @@ def heatmap(
     out.append(f'<text x="{label_w}" y="{legend_y + 30}" class="tick">{esc(lo_txt)}</text>')
     out.append(
         f'<text x="{end_x}" y="{legend_y + 30}" class="tick" text-anchor="end">'
-        f'{vmax:.1f}{esc(unit)}</text>'
+        f"{vmax:.1f}{esc(unit)}</text>"
     )
     out.append("</svg>")
     return "".join(out)
@@ -320,7 +341,7 @@ def grouped_hbar(
                 f'<rect x="{box.l}" y="{y}" width="{bw:.1f}" height="{bar_h}" rx="4" ry="4" '
                 f'fill="{colors[nm]}" class="hit" '
                 f'data-tip="{esc(cat)} &middot; {esc(nm)} &middot; {esc(value_label)} {fmt(v, dp)}">'
-                f'<title>{esc(cat)} / {esc(nm)}: {fmt(v, dp)}</title></rect>'
+                f"<title>{esc(cat)} / {esc(nm)}: {fmt(v, dp)}</title></rect>"
             )
             out.append(
                 f'<text x="{box.l + bw + 7:.1f}" y="{y + bar_h - 2:.1f}" '
@@ -333,7 +354,6 @@ def grouped_hbar(
     )
     out.append("</svg>")
     chips = "".join(
-        f'<span class="chip"><i style="background:{colors[n]}"></i>{esc(n)}</span>'
-        for n in names
+        f'<span class="chip"><i style="background:{colors[n]}"></i>{esc(n)}</span>' for n in names
     )
     return f'<div class="legend">{chips}</div>' + "".join(out)

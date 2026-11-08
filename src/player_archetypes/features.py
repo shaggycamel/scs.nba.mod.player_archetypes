@@ -22,19 +22,19 @@ import polars as pl
 
 # Shot diet and activity mix. The clustering substance lives here.
 RATE_FEATURES: tuple[str, ...] = (
-    "fg3a_share",      # three-point rate: how far out the player operates
-    "ftr",             # free-throw rate: contact / rim pressure
-    "fga_per_min",     # shot-seeking
-    "ast_per_min",     # playmaking volume
-    "ast_pct",         # playmaking share of teammate makes
+    "fg3a_share",  # three-point rate: how far out the player operates
+    "ftr",  # free-throw rate: contact / rim pressure
+    "fga_per_min",  # shot-seeking
+    "ast_per_min",  # playmaking volume
+    "ast_pct",  # playmaking share of teammate makes
     "ast_ratio",
     "tov_pct",
-    "oreb_pct",        # offensive glass: a big-man marker
+    "oreb_pct",  # offensive glass: a big-man marker
     "dreb_pct",
     "stl_per_min",
-    "blk_per_min",     # rim protection
+    "blk_per_min",  # rim protection
     "pf_per_min",
-    "start_rate",      # rotation archetype
+    "start_rate",  # rotation archetype
 )
 
 EFFICIENCY_FEATURES: tuple[str, ...] = ("fg_pct", "fg3_pct", "ft_pct", "ts_pct", "efg_pct")
@@ -100,15 +100,11 @@ def rolling(
             .alias(f"r_{c}")
             for c in cols
         ]
-    aggs.append(
-        pl.col("game_id").shift(1).cum_count().over("player_id").alias("prior_games")
-    )
+    aggs.append(pl.col("game_id").shift(1).cum_count().over("player_id").alias("prior_games"))
     return df.with_columns(aggs)
 
 
-def feature_names(
-    include_efficiency: bool = False, include_volume: bool = True
-) -> list[str]:
+def feature_names(include_efficiency: bool = False, include_volume: bool = True) -> list[str]:
     cols = list(RATE_FEATURES)
     if include_efficiency:
         cols += list(EFFICIENCY_FEATURES)
@@ -160,10 +156,7 @@ def usage_history(per_game_df: pl.DataFrame) -> pl.DataFrame:
         .shift(1)
         .rolling_mean(window_size=20, min_samples=5)
         .over("player_id"),
-        usg_season_to_date=pl.col("usg_pct")
-        .shift(1)
-        .cum_sum()
-        .over(["player_id", "season"])
+        usg_season_to_date=pl.col("usg_pct").shift(1).cum_sum().over(["player_id", "season"])
         / pl.col("usg_pct").shift(1).cum_count().over(["player_id", "season"]),
         min_last5=pl.col("min")
         .shift(1)

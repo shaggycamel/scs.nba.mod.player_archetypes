@@ -2,6 +2,7 @@
 
 Usage: uv run python -m scripts.archetype_report <design.parquet> <k> [cutoff]
 """
+
 from __future__ import annotations
 
 import sys
@@ -36,14 +37,9 @@ print("WHAT DEFINES EACH ARCHETYPE (top |z| features)")
 print("=" * 78)
 for row in prof.iter_rows(named=True):
     label = row["archetype_label"]
-    feats = sorted(
-        ((c, row[c]) for c in names), key=lambda kv: abs(kv[1]), reverse=True
-    )[:5]
+    feats = sorted(((c, row[c]) for c in names), key=lambda kv: abs(kv[1]), reverse=True)[:5]
     desc = ", ".join(f"{c.removeprefix('r_')} {v:+.2f}" for c, v in feats)
-    print(
-        f"archetype {label} · {row['archetype_description']} "
-        f"(n={row['n']:>6,}): {desc}"
-    )
+    print(f"archetype {label} · {row['archetype_description']} (n={row['n']:>6,}): {desc}")
 
 print("\n" + "=" * 78)
 print("EXEMPLARS: highest-confidence player-seasons per archetype (2025-26)")
@@ -81,7 +77,8 @@ with pl.Config(tbl_cols=20, tbl_width_chars=200):
 # How spread is each listed position across archetypes? High entropy means the
 # position label is throwing away real distinctions.
 shares = (
-    joined.group_by("position", "archetype_label").agg(pl.len().alias("n"))
+    joined.group_by("position", "archetype_label")
+    .agg(pl.len().alias("n"))
     .with_columns(share=pl.col("n") / pl.col("n").sum().over("position"))
 )
 ent = (

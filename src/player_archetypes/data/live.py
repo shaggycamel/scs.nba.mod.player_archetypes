@@ -5,9 +5,15 @@ columns that feed the rate features and the schedule columns that attach a
 date, season and season type. Keeping the selection explicit means a new
 column upstream cannot silently change the model inputs.
 """
+
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import polars as pl
+
+if TYPE_CHECKING:
+    from scs_hub.db import Database
 
 BOX_SCORE_SQL = """
     SELECT
@@ -49,11 +55,11 @@ SCHEDULE_SQL = """
 """
 
 
-def read_box_scores(db) -> pl.DataFrame:
+def read_box_scores(db: Database) -> pl.DataFrame:
     """Played player-games with only the columns the archetype features use."""
     return db.read(BOX_SCORE_SQL)
 
 
-def read_schedule(db) -> pl.DataFrame:
+def read_schedule(db: Database) -> pl.DataFrame:
     """The team-level schedule, used to attach date, season and season type."""
     return db.read(SCHEDULE_SQL)

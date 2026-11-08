@@ -10,6 +10,7 @@ count there and lets the caller own ``util.update_log``. Otherwise it writes
 its own status row, so a standalone cron failure is still visible in the
 database.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,9 +33,7 @@ def log(message: str) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--cadence", default=os.environ.get("SCS_CADENCE", "weekly")
-    )
+    parser.add_argument("--cadence", default=os.environ.get("SCS_CADENCE", "weekly"))
     parser.add_argument("--db-con", default="cockroach-write")
     parser.add_argument("--source", default=os.environ.get("UPDATE_LOG_SOURCE", SOURCE))
     return parser.parse_args(argv)
@@ -126,8 +125,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: could not connect to [{args.db_con}]: {exc}", flush=True)
             return 1
         print(
-            f"warning: could not connect to [{args.db_con}]: {exc}; "
-            "row_count unavailable",
+            f"warning: could not connect to [{args.db_con}]: {exc}; row_count unavailable",
             flush=True,
         )
 

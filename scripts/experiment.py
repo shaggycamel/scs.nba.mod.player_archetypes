@@ -4,6 +4,7 @@ Writes every result to artifacts/ as parquet/json for the HTML report.
 
 Usage: uv run python -m scripts.experiment
 """
+
 from __future__ import annotations
 
 import json
@@ -25,8 +26,8 @@ from player_archetypes.data import load
 ART = Path("artifacts")
 ART.mkdir(exist_ok=True)
 
-CUTOFF = date(2024, 10, 1)       # fit archetypes before this, evaluate after
-FIT_SAMPLE = 120_000             # rows used to fit a mixture (14 dims: ample)
+CUTOFF = date(2024, 10, 1)  # fit archetypes before this, evaluate after
+FIT_SAMPLE = 120_000  # rows used to fit a mixture (14 dims: ample)
 SEED = 0
 KS = list(range(3, 13))
 
@@ -66,22 +67,29 @@ rows = []
 for k in KS:
     t0 = time.time()
     gmm = GaussianMixture(
-        n_components=k, covariance_type="full", random_state=SEED,
-        n_init=2, max_iter=300,
+        n_components=k,
+        covariance_type="full",
+        random_state=SEED,
+        n_init=2,
+        max_iter=300,
     ).fit(x_fit)
     km = KMeans(n_clusters=k, random_state=SEED, n_init=4).fit(x_fit)
     shares = np.bincount(gmm.predict(x_held), minlength=k) / x_held.shape[0]
-    rows.append({
-        "k": k,
-        "bic": float(gmm.bic(x_fit)),
-        "fit_loglik": float(gmm.score(x_fit)),
-        "heldout_loglik": float(gmm.score(x_held)),
-        "min_cluster_share": float(shares.min()),
-        "kmeans_inertia": float(km.inertia_),
-        "secs": round(time.time() - t0, 1),
-    })
-    log(f"  k={k} heldout={rows[-1]['heldout_loglik']:.4f} "
-        f"min_share={rows[-1]['min_cluster_share']:.3f} ({rows[-1]['secs']}s)")
+    rows.append(
+        {
+            "k": k,
+            "bic": float(gmm.bic(x_fit)),
+            "fit_loglik": float(gmm.score(x_fit)),
+            "heldout_loglik": float(gmm.score(x_held)),
+            "min_cluster_share": float(shares.min()),
+            "kmeans_inertia": float(km.inertia_),
+            "secs": round(time.time() - t0, 1),
+        }
+    )
+    log(
+        f"  k={k} heldout={rows[-1]['heldout_loglik']:.4f} "
+        f"min_share={rows[-1]['min_cluster_share']:.3f} ({rows[-1]['secs']}s)"
+    )
 
 ksweep = pl.DataFrame(rows)
 ksweep.write_parquet(ART / "k_sweep.parquet")
@@ -93,8 +101,10 @@ viable = ksweep.filter(
     (pl.col("heldout_loglik") >= best_ll - 0.01 * abs(best_ll))
     & (pl.col("min_cluster_share") >= 0.02)
 )
-K = int(viable["k"].min()) if viable.height else int(
-    ksweep.sort("heldout_loglik", descending=True)["k"][0]
+K = (
+    int(viable["k"].min())
+    if viable.height
+    else int(ksweep.sort("heldout_loglik", descending=True)["k"][0])
 )
 log(f"chosen k={K}")
 
@@ -111,30 +121,43 @@ for era in eras:
     sub = X.filter(pl.col("game_date") < era)
     s = sub.sample(min(FIT_SAMPLE, sub.height), seed=SEED)
     sc = StandardScaler().fit(s.select(names).to_numpy())
-    g = GaussianMixture(n_components=K, covariance_type="full",
-                        random_state=SEED, n_init=2, max_iter=300).fit(
-        sc.transform(s.select(names).to_numpy()))
+    g = GaussianMixture(
+        n_components=K, covariance_type="full", random_state=SEED, n_init=2, max_iter=300
+    ).fit(sc.transform(s.select(names).to_numpy()))
     labels[era] = g.predict(sc.transform(ref.select(names).to_numpy()))
 
-stab = pl.DataFrame([
-    {"cutoff_a": str(a), "cutoff_b": str(b),
-     "ari": float(adjusted_rand_score(labels[a], labels[b]))}
-    for i, a in enumerate(eras) for b in eras[i + 1:]
-])
+stab = pl.DataFrame(
+    [
+        {
+            "cutoff_a": str(a),
+            "cutoff_b": str(b),
+            "ari": float(adjusted_rand_score(labels[a], labels[b])),
+        }
+        for i, a in enumerate(eras)
+        for b in eras[i + 1 :]
+    ]
+)
 stab.write_parquet(ART / "stability.parquet")
 log(f"ARI range {stab['ari'].min():.3f} - {stab['ari'].max():.3f}")
 
 # Seed sensitivity at the chosen k.
 seed_labels = []
 for s in range(4):
-    g = GaussianMixture(n_components=K, covariance_type="full", random_state=s,
-                        n_init=2, max_iter=300).fit(x_fit)
+    g = GaussianMixture(
+        n_components=K, covariance_type="full", random_state=s, n_init=2, max_iter=300
+    ).fit(x_fit)
     seed_labels.append(g.predict(x_ref))
-seed_ari = pl.DataFrame([
-    {"seed_a": i, "seed_b": j,
-     "ari": float(adjusted_rand_score(seed_labels[i], seed_labels[j]))}
-    for i in range(4) for j in range(i + 1, 4)
-])
+seed_ari = pl.DataFrame(
+    [
+        {
+            "seed_a": i,
+            "seed_b": j,
+            "ari": float(adjusted_rand_score(seed_labels[i], seed_labels[j])),
+        }
+        for i in range(4)
+        for j in range(i + 1, 4)
+    ]
+)
 seed_ari.write_parquet(ART / "seed_stability.parquet")
 log(f"seed ARI range {seed_ari['ari'].min():.3f} - {seed_ari['ari'].max():.3f}")
 
@@ -146,8 +169,14 @@ log("fitting final model and profiling archetypes")
 model = cluster.fit(fit_rows, names, k=K, cutoff=None, seed=SEED)
 assigned = model.assign(X)
 assigned.select(
-    "player_id", "player_name", "game_id", "game_date", "season",
-    "archetype_label", "archetype_confidence", "archetype_entropy",
+    "player_id",
+    "player_name",
+    "game_id",
+    "game_date",
+    "season",
+    "archetype_label",
+    "archetype_confidence",
+    "archetype_entropy",
     *[f"archetype_{i}" for i in range(K)],
 ).write_parquet(ART / "assignments.parquet")
 
@@ -167,14 +196,18 @@ exemplars.write_parquet(ART / "exemplars.parquet")
 pos = load.listed_positions()
 joined = recent.join(pos, on=["season", "player_id"], how="inner")
 joined.group_by("position", "archetype_label").agg(pl.len().alias("n")).write_parquet(
-    ART / "position_crosstab.parquet")
+    ART / "position_crosstab.parquet"
+)
 
 spread = (
-    joined.group_by("position", "archetype_label").agg(pl.len().alias("n"))
+    joined.group_by("position", "archetype_label")
+    .agg(pl.len().alias("n"))
     .with_columns(share=pl.col("n") / pl.col("n").sum().over("position"))
     .group_by("position")
-    .agg((-(pl.col("share") * pl.col("share").log()).sum()).alias("entropy"),
-         pl.col("n").sum().alias("n"))
+    .agg(
+        (-(pl.col("share") * pl.col("share").log()).sum()).alias("entropy"),
+        pl.col("n").sum().alias("n"),
+    )
     .with_columns(archetypes_spanned=pl.col("entropy").exp().round(2))
     .sort("n", descending=True)
 )
@@ -189,12 +222,11 @@ log("downstream usage model")
 usage_cols = list(features.USAGE_HISTORY)
 archetype_cols = [f"archetype_{i}" for i in range(K)]
 
-panel = (
-    assigned.join(
-        pg.select("player_id", "game_id", "usg_pct", *usage_cols),
-        on=["player_id", "game_id"], how="inner")
-    .drop_nulls(["usg_pct", *usage_cols])
-)
+panel = assigned.join(
+    pg.select("player_id", "game_id", "usg_pct", *usage_cols),
+    on=["player_id", "game_id"],
+    how="inner",
+).drop_nulls(["usg_pct", *usage_cols])
 tr = panel.filter(pl.col("game_date") < CUTOFF)
 te = panel.filter(pl.col("game_date") >= CUTOFF)
 log(f"panel train={tr.height:,} test={te.height:,}")
@@ -204,11 +236,13 @@ results = []
 
 
 def score(label: str, pred: np.ndarray) -> None:
-    results.append({
-        "model": label,
-        "mae": float(mean_absolute_error(y_te, pred)),
-        "rmse": float(np.sqrt(np.mean((y_te - pred) ** 2))),
-    })
+    results.append(
+        {
+            "model": label,
+            "mae": float(mean_absolute_error(y_te, pred)),
+            "rmse": float(np.sqrt(np.mean((y_te - pred) ** 2))),
+        }
+    )
     log(f"  {label:38s} MAE={results[-1]['mae']:.5f} RMSE={results[-1]['rmse']:.5f}")
 
 
@@ -227,6 +261,7 @@ feature_sets = {
 }
 try:
     import lightgbm as lgb
+
     have_lgb = True
 except ImportError:
     have_lgb = False
@@ -239,8 +274,11 @@ for label, cols in feature_sets.items():
     score(f"ridge: {label}", ridge.predict(sc.transform(b)))
     if have_lgb:
         gbm = lgb.LGBMRegressor(
-            n_estimators=400, learning_rate=0.05, num_leaves=63,
-            random_state=SEED, verbose=-1,
+            n_estimators=400,
+            learning_rate=0.05,
+            num_leaves=63,
+            random_state=SEED,
+            verbose=-1,
         ).fit(a, y_tr)
         score(f"lightgbm: {label}", gbm.predict(b))
 
@@ -250,11 +288,12 @@ res.write_parquet(ART / "usage_models.parquet")
 # Feature importance from the best full model, for the write-up.
 if have_lgb:
     cols = usage_cols + names + archetype_cols
-    gbm = lgb.LGBMRegressor(n_estimators=400, learning_rate=0.05, num_leaves=63,
-                            random_state=SEED, verbose=-1).fit(
-        tr.select(cols).to_numpy(), y_tr)
-    pl.DataFrame({"feature": cols, "gain": gbm.booster_.feature_importance("gain")}) \
-        .sort("gain", descending=True).write_parquet(ART / "feature_importance.parquet")
+    gbm = lgb.LGBMRegressor(
+        n_estimators=400, learning_rate=0.05, num_leaves=63, random_state=SEED, verbose=-1
+    ).fit(tr.select(cols).to_numpy(), y_tr)
+    pl.DataFrame({"feature": cols, "gain": gbm.booster_.feature_importance("gain")}).sort(
+        "gain", descending=True
+    ).write_parquet(ART / "feature_importance.parquet")
 
 meta = {
     "k": K,

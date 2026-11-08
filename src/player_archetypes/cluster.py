@@ -141,10 +141,7 @@ def select_k(
                 "bic": float(model.gmm.bic(model._matrix(df.filter(pl.col("game_date") < cutoff)))),
                 "heldout_loglik": float(model.gmm.score(x_held)),
                 "min_cluster_share": float(
-                    np.bincount(
-                        model.gmm.predict(x_held), minlength=k
-                    ).min()
-                    / x_held.shape[0]
+                    np.bincount(model.gmm.predict(x_held), minlength=k).min() / x_held.shape[0]
                 ),
             }
         )
@@ -197,8 +194,5 @@ def profile(
         .sort(f"{prefix}_label")
     )
     return out.with_columns(
-        [
-            ((pl.col(c) - mu[i]) / sd[i]).round(2).alias(c)
-            for i, c in enumerate(names)
-        ]
+        [((pl.col(c) - mu[i]) / sd[i]).round(2).alias(c) for i, c in enumerate(names)]
     )

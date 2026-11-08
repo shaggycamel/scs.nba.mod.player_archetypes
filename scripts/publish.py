@@ -9,6 +9,7 @@ published, because assigning old seasons with a model fitted on later data is a
 retrospective backcast, not a point-in-time result. ``--all-seasons`` writes
 that backcast deliberately.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -87,8 +88,7 @@ def archetype_columns(frame: pl.DataFrame) -> list[str]:
     columns = [
         column
         for column in frame.columns
-        if column.startswith("archetype_")
-        and column.removeprefix("archetype_").isdigit()
+        if column.startswith("archetype_") and column.removeprefix("archetype_").isdigit()
     ]
     return sorted(columns, key=lambda column: int(column.removeprefix("archetype_")))
 
@@ -108,10 +108,10 @@ def create_tables(
     features: list[str],
 ) -> None:
     schema = identifier(schema, "schema")
-    archetype_defs = ",\n".join(f"    {identifier(c, 'archetype column')} FLOAT8" for c in archetypes)
-    feature_defs = ",\n".join(
-        f"    {identifier(c, 'feature column')} FLOAT8" for c in features
+    archetype_defs = ",\n".join(
+        f"    {identifier(c, 'archetype column')} FLOAT8" for c in archetypes
     )
+    feature_defs = ",\n".join(f"    {identifier(c, 'feature column')} FLOAT8" for c in features)
     archetype_table = base_table(schema, "player_archetype")
     current_table = base_table(schema, "player_archetype_current")
     profile_table = base_table(schema, "player_archetype_profile")
@@ -142,8 +142,7 @@ def create_tables(
         f"ON {archetype_table} (player_id, game_date)"
     )
     db.execute(
-        f"CREATE INDEX IF NOT EXISTS player_archetype_season_idx "
-        f"ON {archetype_table} (season)"
+        f"CREATE INDEX IF NOT EXISTS player_archetype_season_idx ON {archetype_table} (season)"
     )
     db.execute(
         f"""
@@ -293,9 +292,7 @@ def validate_assignments(frame: pl.DataFrame, archetypes: list[str]) -> None:
     if keys.null_count().sum_horizontal()[0]:
         raise ValueError("assignments contain null game_id or player_id")
     duplicates = (
-        frame.group_by("game_id", "player_id")
-        .agg(pl.len().alias("n"))
-        .filter(pl.col("n") > 1)
+        frame.group_by("game_id", "player_id").agg(pl.len().alias("n")).filter(pl.col("n") > 1)
     )
     if duplicates.height:
         raise ValueError(f"assignments contain {duplicates.height} duplicate keys")
@@ -378,9 +375,7 @@ def publish(
         write_seasons(db, schema, assignments)
     else:
         old_seasons = (
-            db.read(f"SELECT DISTINCT season FROM {archetype_base}")
-            .get_column("season")
-            .to_list()
+            db.read(f"SELECT DISTINCT season FROM {archetype_base}").get_column("season").to_list()
         )
         for season in old_seasons:
             if season != current_season:
@@ -399,9 +394,7 @@ def publish(
 
     current_archetypes = prepare_current(assignments, current_season)
     log(f"writing player_archetype_current: {current_archetypes.height:,} rows")
-    replace_table_atomic(
-        db, schema, "player_archetype_current_base", current_archetypes
-    )
+    replace_table_atomic(db, schema, "player_archetype_current_base", current_archetypes)
 
     log(f"writing player_archetype_profile: {profiles.height:,} rows")
     replace_table_atomic(db, schema, "player_archetype_profile_base", profiles)
@@ -418,8 +411,7 @@ def publish(
     )
 
     actual = db.read(
-        f"SELECT count(*) AS n FROM {archetype_base} "
-        f"WHERE season = '{current_season}'"
+        f"SELECT count(*) AS n FROM {archetype_base} WHERE season = '{current_season}'"
     )[0, "n"]
     expected = current.height if not all_seasons else assignments.height
     if actual != expected:
@@ -437,12 +429,8 @@ def grant_read(db, schema: str) -> None:
     schema = identifier(schema, "schema")
     db.execute(f"GRANT USAGE ON SCHEMA {schema} TO kobe_public")
     for table in PUBLIC_TABLES:
-        db.execute(
-            f"GRANT SELECT ON TABLE {table_name(schema, table)} TO kobe_public"
-        )
-        db.execute(
-            f"REVOKE SELECT ON TABLE {base_table(schema, table)} FROM kobe_public"
-        )
+        db.execute(f"GRANT SELECT ON TABLE {table_name(schema, table)} TO kobe_public")
+        db.execute(f"REVOKE SELECT ON TABLE {base_table(schema, table)} FROM kobe_public")
     log("granted SELECT on mod views to kobe_public")
 
 

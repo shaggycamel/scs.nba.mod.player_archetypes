@@ -1,4 +1,5 @@
 """Sweep k on held-out likelihood, then test stability across eras."""
+
 import sys
 from datetime import date
 
@@ -20,7 +21,9 @@ best = scores.sort("heldout_loglik", descending=True)["k"][0]
 print(f"\nbest k by held-out log-likelihood: {best}", flush=True)
 
 stab = cluster.stability(
-    X, names, k=best,
+    X,
+    names,
+    k=best,
     cutoffs=[date(2016, 10, 1), date(2020, 10, 1), date(2024, 10, 1)],
 )
 print(stab)
