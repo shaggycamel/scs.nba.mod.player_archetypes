@@ -33,6 +33,12 @@ KEY_COLUMNS = (
     "prior_games",
 )
 SCALAR_ARCHETYPE_COLUMNS = ("archetype_label", "archetype_confidence", "archetype_entropy")
+PUBLIC_TABLES = (
+    "player_archetype",
+    "player_archetype_current",
+    "player_archetype_profile",
+    "player_archetype_model",
+)
 
 
 def log(message: str) -> None:
@@ -47,6 +53,11 @@ def identifier(value: str, kind: str) -> str:
 
 def table_name(schema: str, table: str) -> str:
     return f"{identifier(schema, 'schema')}.{identifier(table, 'table')}"
+
+
+def base_table(schema: str, table: str) -> str:
+    """The writable table behind its public view."""
+    return table_name(schema, f"{table}_base")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -101,10 +112,10 @@ def create_tables(
     feature_defs = ",\n".join(
         f"    {identifier(c, 'feature column')} FLOAT8" for c in features
     )
-    archetype_table = table_name(schema, "player_archetype")
-    current_table = table_name(schema, "player_archetype_current")
-    profile_table = table_name(schema, "player_archetype_profile")
-    model_table = table_name(schema, "player_archetype_model")
+    archetype_table = base_table(schema, "player_archetype")
+    current_table = base_table(schema, "player_archetype_current")
+    profile_table = base_table(schema, "player_archetype_profile")
+    model_table = base_table(schema, "player_archetype_model")
 
     db.execute(
         f"""
@@ -184,6 +195,15 @@ def create_tables(
         )
         """
     )
+
+
+def create_views(db, schema: str) -> None:
+    """Expose the public names as read-only views over the _base tables."""
+    for table in PUBLIC_TABLES:
+        db.execute(
+            f"CREATE OR REPLACE VIEW {table_name(schema, table)} AS "
+            f"SELECT * FROM {base_table(schema, table)}"
+        )
 
 
 def prepare_assignments(frame: pl.DataFrame, model_cutoff: date) -> pl.DataFrame:
@@ -305,7 +325,7 @@ def write_seasons(db, schema: str, frame: pl.DataFrame) -> None:
     for season in seasons:
         chunk = frame.filter(pl.col("season") == season)
         log(f"  writing {season}: {chunk.height:,} rows")
-        db.write(chunk, "player_archetype", schema=schema)
+        db.write(chunk, "player_archetype_base", schema=schema)
 
 
 def delete_all_batched(db, schema: str, table: str) -> None:
@@ -347,16 +367,18 @@ def publish(
     validate_assignments(assignments, archetypes)
     create_schema(db, schema)
     create_tables(db, schema, archetypes, features)
+    create_views(db, schema)
 
-    archetype_table = table_name(schema, "player_archetype")
+    archetype_base = base_table(schema, "player_archetype")
+    archetype_public = table_name(schema, "player_archetype")
     current = assignments.filter(pl.col("season") == current_season)
     if all_seasons:
         log(f"writing retrospective backcast: {assignments.height:,} assignment rows")
-        delete_all_batched(db, schema, "player_archetype")
+        delete_all_batched(db, schema, "player_archetype_base")
         write_seasons(db, schema, assignments)
     else:
         old_seasons = (
-            db.read(f"SELECT DISTINCT season FROM {archetype_table}")
+            db.read(f"SELECT DISTINCT season FROM {archetype_base}")
             .get_column("season")
             .to_list()
         )
@@ -364,12 +386,12 @@ def publish(
             if season != current_season:
                 where = "season IS NULL" if season is None else f"season = '{season}'"
                 log(f"  clearing historical {season or 'null season'}")
-                db.delete_where("player_archetype", schema, where)
+                db.delete_where("player_archetype_base", schema, where)
         log(f"atomically replacing {current_season}: {current.height:,} rows")
         replace_table_atomic(
             db,
             schema,
-            "player_archetype",
+            "player_archetype_base",
             current,
             where="season = :season",
             params={"season": current_season},
@@ -377,24 +399,26 @@ def publish(
 
     current_archetypes = prepare_current(assignments, current_season)
     log(f"writing player_archetype_current: {current_archetypes.height:,} rows")
-    replace_table_atomic(db, schema, "player_archetype_current", current_archetypes)
+    replace_table_atomic(
+        db, schema, "player_archetype_current_base", current_archetypes
+    )
 
     log(f"writing player_archetype_profile: {profiles.height:,} rows")
-    replace_table_atomic(db, schema, "player_archetype_profile", profiles)
+    replace_table_atomic(db, schema, "player_archetype_profile_base", profiles)
 
     model = prepare_model(meta, model_cutoff)
     log("writing player_archetype_model")
     replace_table_atomic(
         db,
         schema,
-        "player_archetype_model",
+        "player_archetype_model_base",
         model,
         where="model_cutoff = :cutoff",
         params={"cutoff": model_cutoff},
     )
 
     actual = db.read(
-        f"SELECT count(*) AS n FROM {archetype_table} "
+        f"SELECT count(*) AS n FROM {archetype_base} "
         f"WHERE season = '{current_season}'"
     )[0, "n"]
     expected = current.height if not all_seasons else assignments.height
@@ -404,7 +428,7 @@ def publish(
     written = assignments if all_seasons else current
     log(
         f"published {written.height:,} rows across "
-        f"{written['season'].n_unique()} season(s) to {archetype_table}; "
+        f"{written['season'].n_unique()} season(s) to {archetype_public}; "
         f"current season {current_season}"
     )
 
@@ -412,16 +436,14 @@ def publish(
 def grant_read(db, schema: str) -> None:
     schema = identifier(schema, "schema")
     db.execute(f"GRANT USAGE ON SCHEMA {schema} TO kobe_public")
-    for table in (
-        "player_archetype",
-        "player_archetype_current",
-        "player_archetype_profile",
-        "player_archetype_model",
-    ):
+    for table in PUBLIC_TABLES:
         db.execute(
             f"GRANT SELECT ON TABLE {table_name(schema, table)} TO kobe_public"
         )
-    log("granted SELECT on mod tables to kobe_public")
+        db.execute(
+            f"REVOKE SELECT ON TABLE {base_table(schema, table)} FROM kobe_public"
+        )
+    log("granted SELECT on mod views to kobe_public")
 
 
 def main(argv: list[str] | None = None) -> int:
