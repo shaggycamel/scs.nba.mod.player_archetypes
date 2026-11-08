@@ -164,8 +164,10 @@ uv run --group data python -m scripts.pipeline \
   --sample 0 --regular-season-only
 ```
 
-`scripts/publish.py` writes the `mod.player_archetype*` tables through the
-`cockroach-write` connection. It publishes the current season only by default;
+`scripts/publish.py` writes the private `mod.player_archetype*_base` tables
+through the `cockroach-write` connection and refreshes the public
+`mod.player_archetype*` views. `kobe_public` only gets `SELECT` on the views.
+It publishes the current season only by default;
 `--all-seasons` is the explicit retrospective backcast.
 
 Both scripts exit non-zero on failure, so they can be called directly from cron
