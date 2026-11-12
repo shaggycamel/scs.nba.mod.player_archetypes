@@ -246,7 +246,7 @@ def score(label: str, pred: np.ndarray) -> None:
     log(f"  {label:38s} MAE={results[-1]['mae']:.5f} RMSE={results[-1]['rmse']:.5f}")
 
 
-# Baselines first, as CLAUDE.md demands.
+# Baselines first.
 score("baseline: global mean", np.full_like(y_te, y_tr.mean()))
 score("baseline: last-5 usage", te["usg_last5"].to_numpy())
 score("baseline: last-20 usage", te["usg_last20"].to_numpy())
