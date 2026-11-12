@@ -34,12 +34,6 @@ KEY_COLUMNS = (
     "prior_games",
 )
 SCALAR_ARCHETYPE_COLUMNS = ("archetype_label", "archetype_confidence", "archetype_entropy")
-PUBLIC_TABLES = (
-    "player_archetype",
-    "player_archetype_current",
-    "player_archetype_profile",
-    "player_archetype_model",
-)
 
 
 def log(message: str) -> None:
@@ -75,11 +69,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--all-seasons",
         action="store_true",
         help="write every historical season as a retrospective backcast",
-    )
-    parser.add_argument(
-        "--no-grant",
-        action="store_true",
-        help="skip SELECT grants for the read-only role",
     )
     return parser.parse_args(argv)
 
@@ -194,15 +183,6 @@ def create_tables(
         )
         """
     )
-
-
-def create_views(db, schema: str) -> None:
-    """Expose the public names as read-only views over the _base tables."""
-    for table in PUBLIC_TABLES:
-        db.execute(
-            f"CREATE OR REPLACE VIEW {table_name(schema, table)} AS "
-            f"SELECT * FROM {base_table(schema, table)}"
-        )
 
 
 def prepare_assignments(frame: pl.DataFrame, model_cutoff: date) -> pl.DataFrame:
@@ -364,10 +344,8 @@ def publish(
     validate_assignments(assignments, archetypes)
     create_schema(db, schema)
     create_tables(db, schema, archetypes, features)
-    create_views(db, schema)
 
     archetype_base = base_table(schema, "player_archetype")
-    archetype_public = table_name(schema, "player_archetype")
     current = assignments.filter(pl.col("season") == current_season)
     if all_seasons:
         log(f"writing retrospective backcast: {assignments.height:,} assignment rows")
@@ -420,18 +398,9 @@ def publish(
     written = assignments if all_seasons else current
     log(
         f"published {written.height:,} rows across "
-        f"{written['season'].n_unique()} season(s) to {archetype_public}; "
+        f"{written['season'].n_unique()} season(s) to {archetype_base}; "
         f"current season {current_season}"
     )
-
-
-def grant_read(db, schema: str) -> None:
-    schema = identifier(schema, "schema")
-    db.execute(f"GRANT USAGE ON SCHEMA {schema} TO kobe_public")
-    for table in PUBLIC_TABLES:
-        db.execute(f"GRANT SELECT ON TABLE {table_name(schema, table)} TO kobe_public")
-        db.execute(f"REVOKE SELECT ON TABLE {base_table(schema, table)} FROM kobe_public")
-    log("granted SELECT on mod views to kobe_public")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -445,8 +414,6 @@ def main(argv: list[str] | None = None) -> int:
 
     hub = SportsHub(db_con=args.db_con)
     publish(hub.db, args.schema, assignments, profiles, meta, args.all_seasons)
-    if not args.no_grant:
-        grant_read(hub.db, args.schema)
     return 0
 
 

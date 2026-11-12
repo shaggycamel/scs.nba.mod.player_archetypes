@@ -15,12 +15,12 @@ The scheduler and operational safeguards are what remain.
 - Model metadata (window, min-periods, prior-games, season type, fit rows, seed)
   is saved in `model.pkl` and checked on load.
 - Missing `model.pkl` fails the run instead of silently refitting.
-- `scripts/publish.py` creates and fills `mod.player_archetype`,
-  `mod.player_archetype_current`, `mod.player_archetype_profile` and
-  `mod.player_archetype_model` through `[cockroach-write]`.
+- `scripts/publish.py` creates and fills the `mod.player_archetype*_base` tables
+  through `[cockroach-write]`.
+- The public `mod.player_archetype*_vw` views are applied from
+  `nba/database/sql/views/mod/`; read access is granted there.
 - The publisher writes the current season only by default; historical backcasts
   require `--all-seasons`.
-- Read access granted to `kobe_public`.
 - Live output verified through 2026-11-02: 2,063 player-games, 390 current
   players, one model row.
 - `scripts/job.py` runs pipeline then publish and writes one `util.update_log`

@@ -165,8 +165,9 @@ uv run --group data python -m scripts.pipeline \
 ```
 
 `scripts/publish.py` writes the private `mod.player_archetype*_base` tables
-through the `cockroach-write` connection and refreshes the public
-`mod.player_archetype*` views. `kobe_public` only gets `SELECT` on the views.
+through the `cockroach-write` connection. The public
+`mod.player_archetype*_vw` views are applied from
+`nba/database/sql/views/mod/`; `kobe_public` only gets `SELECT` on the views.
 It publishes the current season only by default;
 `--all-seasons` is the explicit retrospective backcast.
 
