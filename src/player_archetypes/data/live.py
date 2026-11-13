@@ -18,11 +18,11 @@ if TYPE_CHECKING:
 BOX_SCORE_SQL = """
     SELECT
         game_id,
-        team_abbreviation,
+        team AS team_abbreviation,
         player_id,
         player_name,
         start_position,
-        comment,
+        inj_reason AS comment,
         min,
         fga,
         fg3_a,
@@ -38,7 +38,7 @@ BOX_SCORE_SQL = """
         pf,
         usg_pct,
         e_usg_pct
-    FROM nba.player_box_score
+    FROM nba.player_box_score_vw
     WHERE min IS NOT NULL AND min > 0
 """
 
@@ -51,7 +51,7 @@ SCHEDULE_SQL = """
         team,
         opponent,
         home
-    FROM nba.league_game_schedule
+    FROM nba.league_game_schedule_vw
 """
 
 
