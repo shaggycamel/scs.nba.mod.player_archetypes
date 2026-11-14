@@ -90,9 +90,14 @@ def main(argv: list[str] | None = None) -> int:
                 "scripts.pipeline",
                 "--regular-season-only",
                 "--current-season-only",
+                "--db-con",
+                args.db_con,
             ],
         ),
-        ("publish", [sys.executable, "-m", "scripts.publish"]),
+        (
+            "publish",
+            [sys.executable, "-m", "scripts.publish", "--db-con", args.db_con],
+        ),
     ]
 
     error = None
@@ -132,9 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     row_count = None
     if db is not None and error is None:
         try:
-            row_count = db.read(
-                "SELECT count(*) AS n FROM mod.player_archetype_base"
-            )[0, "n"]
+            row_count = db.read("SELECT count(*) AS n FROM mod.player_archetype_base")[0, "n"]
         except Exception as exc:  # noqa: BLE001 - still write the run status
             print(
                 f"warning: could not count mod.player_archetype_base: {exc}",
