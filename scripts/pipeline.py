@@ -50,7 +50,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db-con",
-        default="cockroach-read",
+        default="jetson-read",
         help="credentials.ini section used for live reads",
     )
     parser.add_argument(

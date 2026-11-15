@@ -93,7 +93,7 @@ util/player_id_map_vw.parquet
 ### Read from the live database
 
 The pipeline reads the live database by default through `scs-hub` and its
-read-only `cockroach-read` connection:
+read-only `jetson-read` connection:
 
 ```bash
 uv sync --group data
@@ -165,7 +165,7 @@ uv run --group data python -m scripts.pipeline \
 ```
 
 `scripts/publish.py` writes the private `mod.player_archetype*_base` tables
-through the `cockroach-write` connection. The public
+through the `jetson-write` connection. The public
 `mod.player_archetype*_vw` views are applied from
 `nba/database/sql/views/mod/`; `kobe_public` only gets `SELECT` on the views.
 It publishes the current season only by default;

@@ -10,13 +10,13 @@ The scheduler and operational safeguards are what remain.
 
 - Frozen production model: regular season only, 10-game rolling window,
   fit cutoff 2026-10-20, trained through the end of 2025-26.
-- `scripts/pipeline.py` reads live from `[cockroach-read]`; no Parquet fallback.
+- `scripts/pipeline.py` reads live from `[jetson-read]`; no Parquet fallback.
 - Regular-season filtering happens before rolling features.
 - Model metadata (window, min-periods, prior-games, season type, fit rows, seed)
   is saved in `model.pkl` and checked on load.
 - Missing `model.pkl` fails the run instead of silently refitting.
 - `scripts/publish.py` creates and fills the `mod.player_archetype*_base` tables
-  through `[cockroach-write]`.
+  through `[jetson-write]`.
 - The public `mod.player_archetype*_vw` views are applied from
   `nba/database/sql/views/mod/`; read access is granted there.
 - The publisher writes the current season only by default; historical backcasts

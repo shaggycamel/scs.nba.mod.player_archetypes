@@ -63,7 +63,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=Path("artifacts/pipeline"),
         help="directory containing assignments.parquet, archetype_profiles.parquet and run.json",
     )
-    parser.add_argument("--db-con", default="cockroach-write")
+    parser.add_argument("--db-con", default="jetson-write")
     parser.add_argument("--schema", default="mod")
     parser.add_argument(
         "--all-seasons",
