@@ -21,9 +21,11 @@ assignment are live on the Jetson.
 - **External validation.** Mean cross-validated R² against `statyx.play_types`
   is 0.244 versus 0.067 for listed position; first-20-games 0.209 versus 0.073.
   The previous 14-feature model scored 0.174 and 0.130.
-- **DB contract reset.** One private table `mod.player_archetype_base` and one
-  public view `mod.player_archetype_vw`; the old current/profile/model tables
-  and views are gone. `game_day_vw` reads the latest base row per player.
+- **DB contract reset.** One private assignment table
+  `mod.player_archetype_base`, one public view `mod.player_archetype_vw`, and a
+  description lookup `mod.player_archetype_lookup_vw` keyed by
+  `(model_version, archetype_label)`. The old current/profile/model tables and
+  views are gone; `game_day_vw` reads the latest base row per player.
 - **Coverage.** 4,417 current-season rows / 448 players through 2026-11-17.
   Cissoko runs through 11/17 (previously stopped at 11/02).
 - **Schedule.** `util.update_schedule` is `intraday`, function sequence 0,

@@ -27,9 +27,12 @@ The labels are convenience output. The responsibilities are the representation:
 a player who does two jobs gets weight on two archetypes instead of being forced into
 one integer category.
 
-The production surface is one table, `mod.player_archetype_base`, and one
-public view, `mod.player_archetype_vw`. Cluster descriptions and feature
-z-scores live in `artifacts/pipeline/run.json`; nothing reads them in SQL.
+The production surface is one assignment table, `mod.player_archetype_base`,
+one public view, `mod.player_archetype_vw`, and a small description lookup,
+`mod.player_archetype_lookup_vw`. The lookup has one row per
+`(model_version, archetype_label)`; the assignment view joins it so every row
+carries `archetype_description`. Feature z-scores still live in
+`artifacts/pipeline/run.json`.
 
 ## Design rules
 

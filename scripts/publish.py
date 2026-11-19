@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -36,6 +36,7 @@ KEY_COLUMNS = (
     "model_checksum",
 )
 SCALAR_ARCHETYPE_COLUMNS = ("archetype_label", "archetype_confidence", "archetype_entropy")
+LOOKUP_TABLE = "player_archetype_lookup_base"
 
 
 def log(message: str) -> None:
@@ -144,6 +145,41 @@ def create_tables(
     )
     db.execute(f"CREATE INDEX IF NOT EXISTS player_archetype_season_idx ON {target} (season)")
     ensure_private(db, target)
+
+    lookup = table_name(schema, LOOKUP_TABLE)
+    db.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {lookup} (
+            model_version TEXT NOT NULL,
+            archetype_label INT8 NOT NULL,
+            archetype_description TEXT,
+            n INT8,
+            model_cutoff DATE,
+            generated_at TIMESTAMPTZ,
+            PRIMARY KEY (model_version, archetype_label)
+        )
+        """
+    )
+    ensure_private(db, lookup)
+
+
+def prepare_lookup(meta: dict, model_cutoff: date) -> pl.DataFrame:
+    profiles = meta.get("profiles")
+    if not profiles:
+        raise ValueError("run.json carries no archetype profiles")
+    return (
+        pl.DataFrame(profiles)
+        .select(
+            pl.col("archetype_label").cast(pl.Int64),
+            pl.col("archetype_description").cast(pl.String),
+            pl.col("n").cast(pl.Int64),
+        )
+        .with_columns(
+            pl.lit(meta["model"]["version"]).alias("model_version"),
+            pl.lit(model_cutoff).alias("model_cutoff"),
+            pl.lit(datetime.fromisoformat(meta["generated_at"])).alias("generated_at"),
+        )
+    )
 
 
 def prepare_assignments(frame: pl.DataFrame) -> pl.DataFrame:
@@ -279,6 +315,17 @@ def publish(
     expected = current.height if not all_seasons else assignments.height
     if actual != expected:
         raise ValueError(f"published row count {actual} != expected {expected}")
+
+    lookup = prepare_lookup(meta, date.fromisoformat(meta["model"]["cutoff"]))
+    replace_table_atomic(
+        db,
+        schema,
+        LOOKUP_TABLE,
+        lookup,
+        where="model_version = :version",
+        params={"version": meta["model"]["version"]},
+    )
+    log(f"wrote {lookup.height} archetype descriptions for {meta['model']['version']}")
 
     written = assignments if all_seasons else current
     log(
