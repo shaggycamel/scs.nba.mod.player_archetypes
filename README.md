@@ -28,10 +28,11 @@ a player who does two jobs gets weight on two archetypes instead of being forced
 one integer category.
 
 The production surface is one assignment table, `mod.player_archetype_base`,
-one public view, `mod.player_archetype_vw`, and a small description lookup,
-`mod.player_archetype_lookup_vw`. The lookup has one row per
-`(model_version, archetype_label)`; the assignment view joins it so every row
-carries `archetype_description`. Feature z-scores still live in
+one public view, `mod.player_archetype_vw`, and a small description table,
+`mod.player_archetype_description_vw` (base table
+`mod.player_archetype_description_base`). The description table has one row per
+`archetype_label`; the views join it, so changing a description is an `UPDATE`,
+not a schema change. Feature z-scores still live in
 `artifacts/pipeline/run.json`.
 
 ## Design rules

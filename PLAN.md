@@ -23,9 +23,9 @@ assignment are live on the Jetson.
   The previous 14-feature model scored 0.174 and 0.130.
 - **DB contract reset.** One private assignment table
   `mod.player_archetype_base`, one public view `mod.player_archetype_vw`, and a
-  description lookup `mod.player_archetype_lookup_vw` keyed by
-  `(model_version, archetype_label)`. The old current/profile/model tables and
-  views are gone; `game_day_vw` reads the latest base row per player.
+  description table `mod.player_archetype_description_base` keyed by
+  `archetype_label`. The old current/profile/model tables and views are gone;
+  `game_day_vw` reads the latest base row per player.
 - **Coverage.** 4,417 current-season rows / 448 players through 2026-11-17.
   Cissoko runs through 11/17 (previously stopped at 11/02).
 - **Schedule.** `util.update_schedule` is `intraday`, function sequence 0,
