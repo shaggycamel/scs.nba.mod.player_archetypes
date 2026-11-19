@@ -174,6 +174,7 @@ or a systemd timer.
 ```bash
 uv run --group data python -m scripts.experiment        # k sweep, stability, ablation, artifacts/
 uv run --group data python -m scripts.validate_playtypes  # external play-type validation
+uv run --group data python -m scripts.backfill_assignments  # walk-forward vectors for team_hierarchy
 uv run python -m scripts.report                           # docs/archetype_clustering_report.html
 ```
 

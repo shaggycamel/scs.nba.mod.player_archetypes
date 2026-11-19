@@ -7,7 +7,12 @@ Implementation status: the style/role split, `start_rate` null fix, last-known
 fallback, archived fit/checksum, one-table contract, intraday assignment and the
 play-type validation are done (mean R² 0.244 versus 0.067 for position). Still
 open: carry-forward rows for players without a 2026-27 game, confidence
-calibration, ARI stability, and the `team_hierarchy` similarity ablation.
+calibration, and ARI stability.
+
+Absorption ablation (2026-11-19): walk-forward assignments for 2021-26,
+Bhattacharyya similarity. Minutes MAE 4.649 versus 4.652, top-quartile vacated
+minutes 5.127 versus 5.131, starter recall slightly worse. The feature was
+rejected and production absorption keeps the position/start-rate feature set.
 
 ## Current state
 

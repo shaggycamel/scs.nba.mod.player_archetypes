@@ -41,8 +41,10 @@ assignment are live on the Jetson.
   entropy is the safe uncertainty measure until it is.
 - Era-to-era stability (ARI) has not been re-measured on the style-only
   taxonomy.
-- Predictive use — similarity in `team_hierarchy` absorption — is not
-  implemented or ablated yet.
+- Absorption similarity was ablated and rejected: 4.649 versus 4.652 minutes
+  MAE overall, 5.127 versus 5.131 on the top quartile, and slightly worse
+  starter recall. Revisit only with a materially better taxonomy or player
+  coverage.
 - CI for ruff and pytest is still absent.
 
 ## Definition of done
