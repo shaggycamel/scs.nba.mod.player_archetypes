@@ -87,6 +87,19 @@ def create_schema(db, schema: str) -> None:
     db.execute(f"CREATE SCHEMA IF NOT EXISTS {identifier(schema, 'schema')}")
 
 
+def ensure_private(db, target: str) -> None:
+    """kobe_public reads the view; the base table must stay private."""
+    has_role = db.read("SELECT count(*) AS n FROM pg_roles WHERE rolname = 'kobe_public'")[0, "n"]
+    if not has_role:
+        return
+    db.execute(f"REVOKE ALL ON {target} FROM kobe_public")
+    granted = db.read(f"SELECT has_table_privilege('kobe_public', '{target}', 'SELECT') AS n")[
+        0, "n"
+    ]
+    if granted:
+        raise RuntimeError(f"{target} is still readable by kobe_public")
+
+
 def create_tables(
     db,
     schema: str,
@@ -130,6 +143,7 @@ def create_tables(
         f"ON {target} (player_id, game_date)"
     )
     db.execute(f"CREATE INDEX IF NOT EXISTS player_archetype_season_idx ON {target} (season)")
+    ensure_private(db, target)
 
 
 def prepare_assignments(frame: pl.DataFrame) -> pl.DataFrame:

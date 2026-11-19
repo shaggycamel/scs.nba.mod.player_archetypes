@@ -9,10 +9,13 @@ play-type validation are done (mean R² 0.244 versus 0.067 for position). Still
 open: carry-forward rows for players without a 2026-27 game, confidence
 calibration, and ARI stability.
 
-Absorption ablation (2026-11-19): walk-forward assignments for 2021-26,
-Bhattacharyya similarity. Minutes MAE 4.649 versus 4.652, top-quartile vacated
-minutes 5.127 versus 5.131, starter recall slightly worse. The feature was
+Season-aware absorption ablation (2026-11-19): walk-forward assignments for
+2021-26, one taxonomy per season. Unweighted style similarity: minutes MAE 4.650
+versus 4.652, top-quartile vacated minutes 5.117 versus 5.131, starter recall
+slightly better. The starter-weighted variant scored 4.652, no gain. Both were
 rejected and production absorption keeps the position/start-rate feature set.
+The earlier cross-season run was misleading because cluster ids are not
+comparable across seasonal fits.
 
 ## Current state
 
