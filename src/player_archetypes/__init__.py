@@ -9,8 +9,8 @@ games before a cutoff, so an archetype is knowable before tip-off.
     assigned = model.assign(design)
 
 `player_archetypes.cluster` is the model; `player_archetypes.features` builds
-its inputs. The parquet loaders live in `player_archetypes.data` so the core
-model can be used without the source snapshot.
+its inputs. The database loaders live in `player_archetypes.data`; the core
+model still needs only the frames it is handed.
 """
 
 from player_archetypes import cluster, features, naming

@@ -235,7 +235,8 @@ section(
     <strong>2025-26 only, at season grain</strong>. That last point decided the design: play-type
     data cannot be a model input without leaking within-season information, so the backbone is
     box-score rates across the full history and statyx is an enrichment layer.</p>""",
-    "Everything here is reproducible with uv run python -m scripts.audit.",
+    "These defects are handled by the database loaders. Reproduce the analysis"
+    " with the experiment and validation scripts.",
 )
 
 # --- 3. Methodology -------------------------------------------------------
@@ -710,7 +711,7 @@ section(
       keys genuinely disagree on touches. If the upstream dump can be fixed, fix it there.</li>
     <li><strong>Minutes are in the feature set.</strong> <code>r_min</code> is rotation archetype, but
       it also correlates with usage, so part of any downstream gain may be a minutes proxy
-      rather than archetype. <code>include_volume=False</code> runs the ablation.</li>
+      rather than archetype. <code>include_role=True</code> runs the ablation.</li>
     <li><strong>One cutoff, not rolling-origin folds.</strong> The split is a single
       train/test boundary. Repeating it across several origins would give error bars.</li>
     </ul>""",
@@ -820,8 +821,7 @@ html_doc = f"""<!doctype html>
 </header>
 {hero}
 {"".join(parts)}
-<footer>Reproduce: <code>uv run python -m scripts.audit</code> &middot;
-<code>uv run python -m scripts.experiment</code> &middot;
+<footer>Reproduce: <code>uv run python -m scripts.experiment</code> &middot;
 <code>uv run python -m scripts.report</code></footer>
 </div><script>{js}</script></body></html>
 """

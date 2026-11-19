@@ -3,6 +3,12 @@
 Status: 2026-11-19. Notes for the next pass on `scs.nba.mod.player_archetypes`.
 This is a design handoff, not a production checklist.
 
+Implementation status: the style/role split, `start_rate` null fix, last-known
+fallback, archived fit/checksum, one-table contract, intraday assignment and the
+play-type validation are done (mean R² 0.244 versus 0.067 for position). Still
+open: carry-forward rows for players without a 2026-27 game, confidence
+calibration, ARI stability, and the `team_hierarchy` similarity ablation.
+
 ## Current state
 
 - GMM, `k=10`, 10-game rolling window, `min_periods=5`, `min_prior_games=5`.

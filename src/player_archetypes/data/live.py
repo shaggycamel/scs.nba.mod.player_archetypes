@@ -39,8 +39,9 @@ BOX_SCORE_SQL = """
         usg_pct,
         e_usg_pct
     FROM nba.player_box_score_vw
-    WHERE min IS NOT NULL AND min > 0
 """
+
+PLAYED_ONLY = " WHERE min IS NOT NULL AND min > 0"
 
 SCHEDULE_SQL = """
     SELECT
@@ -55,9 +56,13 @@ SCHEDULE_SQL = """
 """
 
 
-def read_box_scores(db: Database) -> pl.DataFrame:
-    """Played player-games with only the columns the archetype features use."""
-    return db.read(BOX_SCORE_SQL)
+def read_box_scores(db: Database, played_only: bool = True) -> pl.DataFrame:
+    """Player-games with only the columns the archetype features use.
+
+    `played_only=False` keeps the DNP rows, which `load.box_scores` needs for
+    the audit path and the played flag.
+    """
+    return db.read(BOX_SCORE_SQL + (PLAYED_ONLY if played_only else ""))
 
 
 def read_schedule(db: Database) -> pl.DataFrame:

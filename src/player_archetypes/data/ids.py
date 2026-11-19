@@ -1,60 +1,68 @@
 """Crosswalks between the `nba`, `statyx` and `util` id spaces.
 
-The parquet dumps under `data/` come from three schemas that share no
-identifiers:
+The three schemas share no identifiers:
 
     nba     game_id 21501032   player_id 200811
     statyx  game_id 900034932  player_id 1253150
 
 `util.player_id_map_vw` bridges players. Games have no published map, so we
-rebuild one from (game_date, home_abbr, away_abbr), which resolves 5243/5289
-statyx games; the residue is play-in games the nba schedule labels elsewhere.
+rebuild one from (game_date, home_abbr, away_abbr). The database is the only
+source; there is no Parquet snapshot.
 """
 
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import polars as pl
 
+DEFAULT_DB_CON = "jetson-read"
 
-def _default_data_dir() -> Path:
-    """Locate the Parquet snapshot.
+_DB = None
 
-    `PLAYER_ARCHETYPES_DATA` wins when set. Otherwise the package expects a
-    sibling `data/` directory in the checkout, which is where the original
-    nba_adhoc snapshot lived.
+
+def db(db_con: str | None = None):
+    """The shared read connection, created on first use.
+
+    `scs_hub` is imported lazily so the core model and its tests do not need the
+    data dependency installed.
     """
-    configured = os.environ.get("PLAYER_ARCHETYPES_DATA")
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return Path(__file__).resolve().parents[3] / "data"
+    global _DB
+    if _DB is None:
+        from scs_hub import SportsHub
+
+        section = db_con or os.environ.get("PLAYER_ARCHETYPES_DB_CON", DEFAULT_DB_CON)
+        _DB = SportsHub(db_con=section).db
+    return _DB
 
 
-DATA = _default_data_dir()
-
-
-def player_map(data: Path = DATA) -> pl.DataFrame:
+def player_map(db_con: str | None = None) -> pl.DataFrame:
     """statyx_id <-> nba_id, for players carrying both."""
-    return (
-        pl.read_parquet(data / "util" / "player_id_map_vw.parquet")
-        .filter(pl.col("statyx_id").is_not_null() & pl.col("nba_id").is_not_null())
-        .select("player_key", "conformed_name", "nba_id", "statyx_id")
-        .unique(subset=["statyx_id"])
+    frame = db(db_con).read(
+        """
+        SELECT player_key, conformed_name, nba_id, statyx_id
+        FROM util.player_id_map_vw
+        WHERE statyx_id IS NOT NULL AND nba_id IS NOT NULL
+        """
     )
+    return frame.select(
+        "player_key",
+        "conformed_name",
+        pl.col("nba_id").cast(pl.Int64),
+        pl.col("statyx_id").cast(pl.Int64),
+    ).unique(subset=["statyx_id"])
 
 
 def nba_schedule_from_frame(schedule: pl.DataFrame) -> pl.DataFrame:
     """One row per nba game, with date, season and home/away abbreviations.
 
-    The raw table is team-level (two rows per game); we keep the home row so
-    that `team` is the home side and `opponent` the visitor.
+    The view is team-level (two rows per game); we keep the home row so that
+    `team` is the home side and `opponent` the visitor.
     """
     return (
         schedule.filter(pl.col("home"))
         .select(
-            pl.col("game_id").alias("nba_game_id"),
+            pl.col("game_id").cast(pl.Int64).alias("nba_game_id"),
             "game_date",
             "season",
             "season_type",
@@ -65,21 +73,32 @@ def nba_schedule_from_frame(schedule: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def nba_schedule(data: Path = DATA) -> pl.DataFrame:
-    """One row per nba game from the Parquet snapshot."""
-    return nba_schedule_from_frame(pl.read_parquet(data / "nba" / "league_game_schedule.parquet"))
+def nba_schedule(db_con: str | None = None) -> pl.DataFrame:
+    """One row per nba game, read from the public schedule view."""
+    return nba_schedule_from_frame(
+        db(db_con).read(
+            """
+            SELECT game_id, game_date, season, season_type, team, opponent, home
+            FROM nba.league_game_schedule_vw
+            """
+        )
+    )
 
 
-def game_map(data: Path = DATA) -> pl.DataFrame:
+def game_map(db_con: str | None = None) -> pl.DataFrame:
     """statyx game_id -> nba game_id, joined on date and the two abbreviations."""
-    statyx = pl.read_parquet(data / "statyx" / "schedule.parquet").select(
-        pl.col("game_id").alias("sx_game_id"),
-        "game_date",
-        pl.col("home_team_abbr").alias("home_abbr"),
-        pl.col("visitor_team_abbr").alias("away_abbr"),
+    statyx = db(db_con).read(
+        """
+        SELECT
+            game_id AS sx_game_id,
+            game_date,
+            home_team_abbr AS home_abbr,
+            visitor_team_abbr AS away_abbr
+        FROM statyx.schedule_vw
+        """
     )
     return (
-        statyx.join(nba_schedule(data), on=["game_date", "home_abbr", "away_abbr"], how="inner")
+        statyx.join(nba_schedule(db_con), on=["game_date", "home_abbr", "away_abbr"], how="inner")
         .select("sx_game_id", "nba_game_id", "game_date", "season", "season_type")
         .unique(subset=["sx_game_id"])
     )

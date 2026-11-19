@@ -1,8 +1,7 @@
-"""Loaders for the Parquet snapshot the archetype model was built against.
+"""Loaders over the public database views.
 
-Set `PLAYER_ARCHETYPES_DATA` to the directory containing `nba/`, `statyx/` and
-`util/`, or pass a path explicitly to any loader. The data is intentionally not
-part of this repository.
+The connection defaults to `jetson-read`; set `PLAYER_ARCHETYPES_DB_CON` to use
+another `scs_hub` credentials section. There is no Parquet snapshot.
 """
 
 from player_archetypes.data import ids, live, load

@@ -11,16 +11,18 @@ Usage:
 Outputs, under ``artifacts/pipeline/`` by default:
 
     model.pkl              fitted scaler/PCA/mixture (written only on a refit)
+    model.json             version, checksum and fit settings for the artifact
     assignments.parquet    one row per player-game with archetype responsibilities
-    archetype_profiles.parquet  per-archetype feature means as z-scores
-    run.json               provenance and summary for this run
+    run.json               provenance, summary and cluster profiles for this run
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pickle
+import shutil
 import subprocess
 from datetime import UTC, date, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -98,6 +100,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-periods", type=int, default=5)
     parser.add_argument("--min-prior-games", type=int, default=5)
     parser.add_argument(
+        "--include-role",
+        action="store_true",
+        help="add start_rate and min to the clustering inputs (ablation only)",
+    )
+    parser.add_argument(
         "--sample",
         type=int,
         default=120_000,
@@ -128,6 +135,59 @@ def _save_model(model: cluster.ArchetypeModel, path: Path) -> None:
 def _load_model(path: Path) -> cluster.ArchetypeModel:
     with path.open("rb") as handle:
         return pickle.load(handle)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _model_meta(
+    model: cluster.ArchetypeModel,
+    *,
+    version: str,
+    checksum: str,
+    names: list[str],
+) -> dict:
+    return {
+        "model_version": version,
+        "model_checksum": checksum,
+        "cutoff": str(model.cutoff) if model.cutoff is not None else None,
+        "k": int(model.gmm.n_components),
+        "features": names,
+        "window": model.window,
+        "min_periods": model.min_periods,
+        "min_prior_games": model.min_prior_games,
+        "season_type": model.season_type,
+        "fit_rows": model.fit_rows,
+        "seed": model.seed,
+    }
+
+
+def _archive_model(model_path: Path, meta: dict, out_dir: Path) -> None:
+    """Keep every seasonal fit, not just the mutable current-model file."""
+    archive_dir = out_dir / "models" / meta["model_version"]
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(model_path, archive_dir / model_path.name)
+    _atomic_json(meta, archive_dir / "model.json")
+    _atomic_json(meta, model_path.with_name("model.json"))
+
+
+def _load_model_meta(model_path: Path) -> dict:
+    meta_path = model_path.with_name("model.json")
+    if not meta_path.exists():
+        raise FileNotFoundError(f"missing {meta_path}; refit once to create the model sidecar")
+    meta = json.loads(meta_path.read_text())
+    actual = _file_sha256(model_path)
+    if actual != meta["model_checksum"]:
+        raise ValueError(
+            f"{model_path} checksum {actual[:12]} does not match "
+            f"model.json {meta['model_checksum'][:12]}"
+        )
+    return meta
 
 
 def _git_sha() -> str | None:
@@ -214,8 +274,17 @@ def main(argv: list[str] | None = None) -> int:
     season_type = "Regular Season" if args.regular_season_only else None
 
     pg = features.usage_history(features.per_game(box))
-    rolled = features.rolling(pg, window=args.window, min_periods=args.min_periods)
-    design, names = features.design_matrix(rolled, min_prior_games=args.min_prior_games)
+    rolled = features.rolling(
+        pg,
+        window=args.window,
+        min_periods=args.min_periods,
+        include_role=args.include_role,
+    )
+    design, names = features.design_matrix(
+        rolled,
+        include_role=args.include_role,
+        min_prior_games=args.min_prior_games,
+    )
     if design.height == 0:
         print("error: the design matrix is empty after the prior-games filter", flush=True)
         return 2
@@ -247,11 +316,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         _save_model(model, model_path)
         fit_rows = train.height
+        checksum = _file_sha256(model_path)
+        version = f"{cutoff}.{checksum[:8]}"
+        model_meta = _model_meta(model, version=version, checksum=checksum, names=names)
+        _archive_model(model_path, model_meta, out_dir)
         mode = "refit"
-        log(f"wrote model to {model_path}")
+        log(f"wrote {version} to {model_path} and archived it")
     else:
         log(f"loading model from {model_path}")
         model = _load_model(model_path)
+        model_meta = _load_model_meta(model_path)
+        version = model_meta["model_version"]
+        checksum = model_meta["model_checksum"]
         if model.names != names:
             print(
                 "error: saved model features do not match the current design matrix\n"
@@ -293,10 +369,15 @@ def main(argv: list[str] | None = None) -> int:
             "season",
             "team_abbreviation",
             "prior_games",
+            "features_through",
         )
         if column in assigned.columns
     ]
-    published = assigned.select([*keys, *ARCHETYPE_COLUMNS, *archetype_cols, *names])
+    published = assigned.select([*keys, *ARCHETYPE_COLUMNS, *archetype_cols, *names]).with_columns(
+        pl.lit(model_meta["cutoff"]).cast(pl.String).str.to_date().alias("model_cutoff"),
+        pl.lit(version).alias("model_version"),
+        pl.lit(checksum).alias("model_checksum"),
+    )
     if args.current_season_only:
         seasons = published["season"].drop_nulls()
         if seasons.len() == 0:
@@ -311,10 +392,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     assignments_path = out_dir / "assignments.parquet"
-    profiles_path = out_dir / "archetype_profiles.parquet"
     profiles = naming.describe_archetypes(cluster.profile(assigned, names))
     _atomic_parquet(published, assignments_path)
-    _atomic_parquet(profiles, profiles_path)
 
     shares = (
         published.group_by("archetype_label")
@@ -341,8 +420,11 @@ def main(argv: list[str] | None = None) -> int:
         },
         "model": {
             "path": str(model_path),
+            "version": version,
+            "checksum": checksum,
             "k": int(model.gmm.n_components),
-            "cutoff": str(model.cutoff) if model.cutoff is not None else None,
+            "cutoff": model_meta["cutoff"],
+            "features": names,
             "seed": args.seed,
             "covariance_type": model.gmm.covariance_type,
             "fit_rows": fit_rows,
@@ -353,7 +435,9 @@ def main(argv: list[str] | None = None) -> int:
         },
         "assignments": {
             "rows": published.height,
+            "players": int(published["player_id"].n_unique()),
             "season": (str(published["season"].max()) if args.current_season_only else None),
+            "features_through_max": str(published["features_through"].max()),
             "mean_confidence": float(published["archetype_confidence"].mean()),
             "frac_ambiguous": float((published["archetype_confidence"] < 0.6).mean()),
             "cluster_shares": {
@@ -361,9 +445,9 @@ def main(argv: list[str] | None = None) -> int:
                 for row in shares.iter_rows(named=True)
             },
         },
+        "profiles": profiles.to_dicts(),
         "outputs": {
             "assignments": str(assignments_path),
-            "archetype_profiles": str(profiles_path),
             "model": str(model_path),
         },
     }

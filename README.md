@@ -3,9 +3,10 @@
 Point-in-time player archetypes for basketball player-games.
 
 This package replaces listed position with a soft, data-driven description of
-what a player actually does on the floor. A Gaussian mixture is fitted on
-trailing, per-minute rate stats, then scores each player-game with a vector of
-archetype responsibilities.
+what a player actually does on the floor. A Gaussian mixture is fitted on 12
+trailing style rates, then scores each player-game with a vector of archetype
+responsibilities. Role and volume are deliberately excluded; they belong in the
+minutes and absorption models.
 
 Extracted from the `nba_adhoc` role-clustering branch at commit
 `2d93ab24755bc50a728494916f90d1ef91000e75` (`cluster-mod`). The source branch
@@ -15,21 +16,26 @@ is archived in that repository as tag `archive/cluster-mod-2026-11-02`.
 
 - `archetype_0` … `archetype_{k-1}` — soft responsibilities, one per archetype; rows sum to 1.
 - `archetype_label` — the argmax archetype, for reading and plotting.
-- `archetype_confidence` — the largest responsibility.
+- `archetype_confidence` — the largest responsibility. It is a mixture
+  posterior, not a calibrated probability; prefer `archetype_entropy` when the
+  uncertainty matters.
 - `archetype_entropy` — normalised entropy; 0 is pure, 1 is evenly split.
+- `features_through` — the last game that fed the assignment, so staleness is
+  visible without guessing from the run date.
 
 The labels are convenience output. The responsibilities are the representation:
 a player who does two jobs gets weight on two archetypes instead of being forced into
 one integer category.
 
-The published `mod.player_archetype_profile` table adds a human-readable
-`archetype_description` immediately after `archetype_label`; it is derived from
-the same feature z-scores as the labels.
+The production surface is one table, `mod.player_archetype_base`, and one
+public view, `mod.player_archetype_vw`. Cluster descriptions and feature
+z-scores live in `artifacts/pipeline/run.json`; nothing reads them in SQL.
 
 ## Design rules
 
-- **Rate, not volume.** Counting stats are per-minute; shot types are shares of
-  the player's own attempts.
+- **Style, not role or volume.** Counting stats are per-minute and shot types
+  are shares of the player's own attempts. `start_rate` and `min` are role
+  features, kept in `ROLE_FEATURES` and off by default.
 - **No usage.** `usg_pct` and `e_usg_pct` are the downstream target and never
   enter the clustering inputs.
 - **No efficiency.** Shooting percentages describe how well, not what.
@@ -37,24 +43,28 @@ the same feature z-scores as the labels.
   the floor.
 - **Strictly prior games.** Every feature at game *g* uses games before *g*, and
   every fit is handed only rows before a cutoff date.
+- **Last-known fallback.** A null trailing style rate is carried forward from
+  the player's previous computed value, so a short-handed window does not drop
+  the row.
 
 ## Results
 
-The archetypes are a better description of how players play than listed position,
-and they do not improve a next-game usage model. Both results are in
+The style-only taxonomy is a better description of how players play than listed
+position. Against `statyx.play_types` — data the clustering never saw — the
+archetypes reach mean cross-validated R² **0.244 versus 0.067** for listed
+position (3.6×). The early-season variant, which removes most same-season
+overlap, gets **0.209 versus 0.073** (2.9×). The previous 14-feature model
+scored 0.174 and 0.130 on the same tests; removing role and fixing the
+`start_rate` null improved both.
+
+The usage result from the previous iteration still stands: adding archetype
+features to a next-game usage model moved MAE by 0.25% and was rejected. It has
+not been retested on the new taxonomy, and the open questions below remain.
+Era-to-era stability and confidence calibration are the next measurements, not
+claims.
+
+The full previous-iteration analysis is in
 [`docs/archetype_clustering_report.html`](docs/archetype_clustering_report.html).
-
-- Against `statyx.play_types` — data the clustering never saw — the archetypes reach
-  mean cross-validated R² 0.174 versus 0.047 for listed position (3.7×). The
-  early-season variant, which removes most same-season overlap, still gets
-  0.130 versus 0.058 (2.2×).
-- Adding archetype features to a usage model moves MAE from 0.05016 to 0.05004, a
-  0.25% improvement. On the project's rule — keep clustering only if an
-  ablation shows a gain — this model does not qualify.
-- Era-to-era ARI is 0.467–0.666; seed-to-seed ARI is 0.656–0.996. The taxonomy
-  is recognisable but its boundaries move with the fitting window.
-
-The fair summary: a descriptive taxonomy, not a useful next-game usage feature.
 
 ## Install
 
@@ -62,47 +72,26 @@ The fair summary: a descriptive taxonomy, not a useful next-game usage feature.
 uv sync --group dev
 ```
 
-The core model needs only `polars`, `numpy` and `scikit-learn`; the parquet
-loaders also need `pyarrow`. The optional `experiments` extra adds LightGBM for
+The core model needs only `polars`, `numpy` and `scikit-learn`; the `data` group
+adds `scs-hub` for the live views. The research harness also uses `pyarrow` for
+its analysis artifacts, and the optional `experiments` extra adds LightGBM for
 the full downstream comparison.
 
 ## Data
 
-The source snapshot is not committed. Point the loaders at a directory
-containing `nba/`, `statyx/` and `util/`:
-
-```bash
-export PLAYER_ARCHETYPES_DATA=/path/to/nba_adhoc/data
-```
-
-Every loader also accepts an explicit `data=` argument. If the environment
-variable is unset, the default is `data/` in the repository root.
-
-The model needs these files in particular:
-
-```
-nba/player_box_score.parquet
-nba/league_game_schedule.parquet
-nba/player_info.parquet
-statyx/advanced_stats.parquet
-statyx/play_types.parquet
-statyx/schedule.parquet
-util/player_id_map_vw.parquet
-```
-
-### Read from the live database
-
-The pipeline reads the live database by default through `scs-hub` and its
-read-only `jetson-read` connection:
+The database is the only source. The pipeline and the research loaders read the
+public views through `scs-hub`; there is no Parquet snapshot and no
+`gen.py`.
 
 ```bash
 uv sync --group data
 uv run --group data python -m scripts.pipeline
 ```
 
-`scripts/pipeline.py` selects only the box-score and schedule columns the
-features use, so it does not depend on a local snapshot. The Parquet loaders
-remain for the research scripts, but production has no offline path.
+The default connection is `jetson-read`; override it with
+`PLAYER_ARCHETYPES_DB_CON` (or the `db_con` argument on the loader). The
+production job passes `--db-con jetson-write` because it runs on the Jetson and
+publishes from the same role.
 
 Credentials come from `SCS_HUB_CREDENTIALS` or
 `~/.config/scs_hub_credentials.ini`. The host needs `libpq` to build
@@ -148,12 +137,15 @@ model, assigns the current season, and publishes. When `SCS_RESULT_FILE` is set
 For a manual standalone run:
 
 ```bash
-uv run --group data python -m scripts.job --cadence weekly
+uv run --group data python -m scripts.job --cadence intraday
 ```
 
 It fails before assigning if the newest played game is more than seven days old
 (`--max-data-age-days`), if `model.pkl` is missing, or if the publish fails.
 The pipeline and publish stages remain available separately for debugging.
+
+The schedule row runs `intraday` at function sequence 0, before
+`team_hierarchy`; see [`SCHEDULING.md`](SCHEDULING.md).
 
 Refit only once per season:
 
@@ -164,11 +156,14 @@ uv run --group data python -m scripts.pipeline \
   --sample 0 --regular-season-only
 ```
 
-`scripts/publish.py` writes the private `mod.player_archetype*_base` tables
-through the `jetson-write` connection. The public
-`mod.player_archetype*_vw` views are applied from
-`nba/database/sql/views/mod/`; `kobe_public` only gets `SELECT` on the views.
-It publishes the current season only by default;
+Each refit is archived under `artifacts/pipeline/models/<model_version>/` with
+`model.json` and a checksum; every published row carries `model_version`,
+`model_cutoff` and `model_checksum`.
+
+`scripts/publish.py` writes the private `mod.player_archetype_base` table
+through the `jetson-write` connection. The public `mod.player_archetype_vw`
+view is applied from `nba/database/sql/views/mod/`; `kobe_public` only gets
+`SELECT` on the view. It publishes the current season only by default;
 `--all-seasons` is the explicit retrospective backcast.
 
 Both scripts exit non-zero on failure, so they can be called directly from cron
@@ -177,15 +172,15 @@ or a systemd timer.
 ## Reproduce
 
 ```bash
-export PLAYER_ARCHETYPES_DATA=/path/to/nba_adhoc/data
-uv run python -m scripts.experiment        # k sweep, stability, ablation, artifacts/
-uv run python -m scripts.validate_playtypes  # external play-type validation
-uv run python -m scripts.report              # docs/archetype_clustering_report.html
-uv run python -m scripts.audit               # data defects
+uv run --group data python -m scripts.experiment        # k sweep, stability, ablation, artifacts/
+uv run --group data python -m scripts.validate_playtypes  # external play-type validation
+uv run python -m scripts.report                           # docs/archetype_clustering_report.html
 ```
 
-`scripts/report.py` writes `docs/archetype_clustering_report.html`. The committed
-report is the output of the commands above against the source snapshot.
+The research loaders read the same public views as production, so there is no
+snapshot to set up. `scripts/report.py` writes
+`docs/archetype_clustering_report.html` from the analysis artifacts in
+`artifacts/`.
 
 ## Layout
 
@@ -193,8 +188,8 @@ report is the output of the commands above against the source snapshot.
 src/player_archetypes/
   cluster.py      # mixture fit, assignment, k selection, stability, profiling
   features.py     # per-game rates, trailing windows, usage baselines
-  data/           # parquet loaders and id crosswalks
-scripts/          # experiment, validation, audit and report harness
-tests/            # synthetic-data tests; no snapshot required
+  data/           # database loaders and id crosswalks
+scripts/          # experiment, validation and report harness
+tests/            # synthetic-data tests; no database required
 docs/             # rendered report
 ```

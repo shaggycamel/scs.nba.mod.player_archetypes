@@ -81,7 +81,31 @@ def test_usage_history_never_sees_the_current_game():
 def test_feature_names_exclude_usage_and_optional_blocks():
     names = features.feature_names()
     assert not any("usg" in name for name in names)
-    assert "r_min" in names
-    assert "r_min" not in features.feature_names(include_volume=False)
+    assert "r_min" not in names
+    assert "r_start_rate" not in names
+    assert "r_min" in features.feature_names(include_role=True)
+    assert "r_start_rate" in features.feature_names(include_role=True)
     assert "r_fg_pct" not in names
     assert "r_fg_pct" in features.feature_names(include_efficiency=True)
+
+
+def test_bench_games_count_as_zero_starts():
+    """A null start_position means the player did not start, not missing data."""
+    raw = per_game_frame(games=4).with_columns(
+        start_position=pl.Series(["G", None, "G", None], dtype=pl.String)
+    )
+    rolled = features.rolling(features.per_game(raw), window=4, min_periods=1, include_role=True)
+    rates = rolled.sort("game_date")["r_start_rate"].to_list()
+    # Features at game g use only prior games, so the first row has no rate.
+    assert rates[1] == pytest.approx(1.0)
+    assert rates[2] == pytest.approx(0.5)
+    assert rates[3] == pytest.approx(2.0 / 3.0)
+
+
+def test_zero_attempt_games_have_zero_shot_shares():
+    raw = per_game_frame(games=1).with_columns(
+        fga=pl.Series([0.0]), fg3_a=pl.Series([0.0]), fta=pl.Series([0.0])
+    )
+    out = features.per_game(raw)
+    assert out["fg3a_share"].item() == pytest.approx(0.0)
+    assert out["ftr"].item() == pytest.approx(0.0)

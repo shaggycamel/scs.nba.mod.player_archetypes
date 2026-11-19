@@ -1,84 +1,54 @@
 # Player Archetypes — Production Checklist
 
-Status: 2026-11-04. The model, live pipeline and Cockroach output are working.
-The scheduler and operational safeguards are what remain.
-
-> Scheduling update: the weekly job now runs through `nba/mod/_runner` using
-> `util.update_schedule.job_family = 'model'`. See `SCHEDULING.md`.
+Status: 2026-11-19. Style-only taxonomy, one-table contract and intraday
+assignment are live on the Jetson.
 
 ## Done
 
-- Frozen production model: regular season only, 10-game rolling window,
-  fit cutoff 2026-10-20, trained through the end of 2025-26.
-- `scripts/pipeline.py` reads live from `[jetson-read]`; no Parquet fallback.
-- Regular-season filtering happens before rolling features.
-- Model metadata (window, min-periods, prior-games, season type, fit rows, seed)
-  is saved in `model.pkl` and checked on load.
-- Missing `model.pkl` fails the run instead of silently refitting.
-- `scripts/publish.py` creates and fills the `mod.player_archetype*_base` tables
-  through `[jetson-write]`.
-- The public `mod.player_archetype*_vw` views are applied from
-  `nba/database/sql/views/mod/`; read access is granted there.
-- The publisher writes the current season only by default; historical backcasts
-  require `--all-seasons`.
-- Live output verified through 2026-11-02: 2,063 player-games, 390 current
-  players, one model row.
-- `scripts/job.py` runs pipeline then publish and writes one `util.update_log`
-  row per run.
-- Freshness guard: fails if the newest played game is more than seven days old.
-- Atomic publish: the current-season replacement runs in one transaction.
-- Pre-publish validation: no null keys, no duplicates, responsibilities sum to 1.
-- Ruff clean; tests pass.
+- **Style, not role.** The clustering uses 12 style rates. `start_rate` and
+  `min` are `ROLE_FEATURES`, off by default and available only through
+  `include_role=True` for the ablation.
+- **Coverage fix.** A null `start_position` now means a bench game (0 starts),
+  not a missing value. Zero-attempt games get zero shot shares, and a null
+  trailing rate falls back to the player's last computed value.
+- **Frozen fit, daily assign.** `model.pkl` fitted through 2026-10-20 at k=10.
+  Each refit is archived under `artifacts/pipeline/models/<version>/` with a
+  checksum; every output row carries `model_version`, `model_cutoff` and
+  `model_checksum`.
+- **k sweep.** Held-out log-likelihood and cluster share on live data: k=10 is
+  the stopping point; k=12/14 gain 0.03–0.07 log-likelihood while the minimum
+  cluster share halves.
+- **External validation.** Mean cross-validated R² against `statyx.play_types`
+  is 0.244 versus 0.067 for listed position; first-20-games 0.209 versus 0.073.
+  The previous 14-feature model scored 0.174 and 0.130.
+- **DB contract reset.** One private table `mod.player_archetype_base` and one
+  public view `mod.player_archetype_vw`; the old current/profile/model tables
+  and views are gone. `game_day_vw` reads the latest base row per player.
+- **Coverage.** 4,417 current-season rows / 448 players through 2026-11-17.
+  Cissoko runs through 11/17 (previously stopped at 11/02).
+- **Schedule.** `util.update_schedule` is `intraday`, function sequence 0,
+  before `team_hierarchy`.
+- **Data access.** Production and research read the public views through
+  `scs-hub`; the Parquet snapshot and its `gen.py` are gone.
 
-## P0 — before the weekly cron
+## Open
 
-1. **Cron wrapper and entry**
-   - Call `uv run --frozen --group data python -m scripts.job --cadence weekly`.
-   - `flock` to prevent overlap.
-   - Explicit `PATH`; run from the repo root.
-   - Monday 14:00 UTC, after the database's 13:00 UTC daily update.
-   - Append to `cron.log`; exit non-zero on failure.
-
-## P1 — robustness
-
-5. **Model archive and versioning**
-   - Archive each seasonal fit under a versioned path, not only the mutable
-     `artifacts/pipeline/model.pkl`.
-   - Record a checksum and the model ID in the output tables.
-
-6. **Post-run validation**
-   - Expected current-season row count.
-   - No null keys or duplicate `(game_id, player_id)`.
-   - Responsibility rows sum to 1.
-   - Cluster shares within a sane range.
-   - Mean confidence and ambiguous share.
-
-7. **CI**
-   - GitHub Actions for ruff and pytest.
-
-8. **Runbook**
-   - Seasonal refit command.
-   - How to read logs and `util.update_log`.
-   - How to recover from a failed publish.
-   - How to roll back a bad model.
-
-9. **DDL ownership**
-   - Keep the `mod` table definitions in the repo as SQL or version them in the
-     publisher, rather than relying on implicit `CREATE TABLE IF NOT EXISTS`.
-
-## P2 — later
-
-10. **Seasonal refit reminder**
-    - Refit in preseason with cutoff at the first regular-season game.
-    - Keep the taxonomy frozen for the season.
-
-11. **Archetype stability monitoring**
-    - Compare seasonal fits (ARI, cluster shares, confidence).
-    - Flag a refit that collapses or reshuffles the taxonomy.
+- Players with no 2026-27 appearance (82 in `game_day_vw`) have no row, because
+  only the current season is published. A last-known carry-forward row is the
+  intended fix, and it needs an explicit decision on whether those rows carry
+  their true season or a synthetic date.
+- Confidence is still a mixture posterior. Reliability has not been measured;
+  entropy is the safe uncertainty measure until it is.
+- Era-to-era stability (ARI) has not been re-measured on the style-only
+  taxonomy.
+- Predictive use — similarity in `team_hierarchy` absorption — is not
+  implemented or ablated yet.
+- CI for ruff and pytest is still absent.
 
 ## Definition of done
 
-- The weekly cron runs unattended on the Jetson.
-- The job fails visibly on a stale database, missing model or failed publish.
-- Every run leaves a status row and a reproducible model version.
-- The `mod` tables always contain exactly the current regular season.
+- The intraday job runs unattended on the Jetson and fails visibly on stale
+  data, a missing model or a failed publish.
+- Every published row is reproducible from the archived model version.
+- The tables contain exactly the current regular season plus the agreed
+  carry-forward rows.
